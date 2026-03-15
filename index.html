@@ -912,9 +912,7 @@ function loginAs(r){
   }
 }
 
-async function showProfileScreen(){
-  // Always pull latest state before showing profile so we have fresh contestant list
-  try{ await pullState(); }catch(e){}
+function showProfileScreen(){
   const ps=document.getElementById('profileScreen');
   ps.style.display='flex';
   // Reset to step 1
@@ -931,7 +929,6 @@ function profileCheckName(){
   const errEl = document.getElementById('profileError');
   if(!name){ errEl.textContent='Enter your name.'; return; }
   const existing = S.contestants.find(c=>c.name.toLowerCase()===name.toLowerCase());
-  alert("existing=" + (existing?existing.name:"none") + " S.contestants=" + S.contestants.length);
   if(existing){
     document.getElementById('profileStep1').style.display='none';
     document.getElementById('profileStep2Return').style.display='block';
@@ -940,12 +937,8 @@ function profileCheckName(){
     document.getElementById('profileReturnError').textContent='';
     setTimeout(()=>document.getElementById('profileReturnPin').focus(),100);
   } else {
-    alert("showing step2New now");
-    const s1=document.getElementById('profileStep1');
-    const s2=document.getElementById('profileStep2New');
-    alert("s1="+s1+" s2="+s2);
-    s1.style.display='none';
-    s2.style.display='block';
+    document.getElementById('profileStep1').style.display='none';
+    document.getElementById('profileStep2New').style.display='block';
     document.getElementById('profileTeamName').value='';
     document.getElementById('profileNewPin').value='';
     document.getElementById('profileNewPin2').value='';
@@ -963,7 +956,6 @@ function profileBackToStep1(){
 }
 
 function confirmReturn(){
-  debugLog("[BTN] confirmReturn fired");
   const name = document.getElementById('profilePlayerName').value.trim();
   const pin  = document.getElementById('profileReturnPin').value.trim();
   const errEl = document.getElementById('profileReturnError');
@@ -982,7 +974,6 @@ function confirmReturn(){
 
 function confirmProfile(){
   try{
-  debugLog("[BTN] confirmProfile fired");
   debugLog("[CONFIRM-NEW] S.contestants:" + S.contestants.length);
   const name     = document.getElementById('profilePlayerName').value.trim();
   const teamName = document.getElementById('profileTeamName').value.trim();
