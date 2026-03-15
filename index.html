@@ -1504,12 +1504,15 @@ function doTrade(){
 // ════════════════════════════════════════════════
 function debugLog(msg){
   console.log(msg);
-  const el = document.getElementById('debugLog');
-  if(!el) return;
-  const line = document.createElement('div');
-  line.textContent = new Date().toLocaleTimeString() + ' ' + msg;
-  el.appendChild(line);
-  el.scrollTop = el.scrollHeight;
+  const t = new Date().toLocaleTimeString() + ' ' + msg;
+  ['debugLog','debugPanelLB'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    const line = document.createElement('div');
+    line.textContent = t;
+    el.appendChild(line);
+    el.scrollTop = el.scrollHeight;
+  });
 }
 
 function renderContestantsList(){
