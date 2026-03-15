@@ -515,13 +515,7 @@ select.input{cursor:pointer;}
       </div>
     </div>
 
-    <div class="setup-section" id="debugPanel">
-      <div class="sec-label">🐛 Debug Log</div>
-      <div id="debugLog" style="font-size:11px;font-family:monospace;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:10px;max-height:200px;overflow-y:auto;color:var(--t2);line-height:1.8;"></div>
-      <button class="btn sec sm" style="margin-top:8px;" onclick="document.getElementById('debugLog').innerHTML=''">Clear</button>
-    </div>
-
-    <div class="setup-section">
+<div class="setup-section">
       <div class="sec-label">🔄 Sync Status</div>
       <div class="card card-sm">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -911,6 +905,15 @@ function loginAs(r){
     enterApp();
   }
 }
+function enterApp(){
+  const app=document.getElementById('app');
+  app.style.display='flex';
+  applyRole();
+  document.getElementById('seasonTag').textContent=META.year||new Date().getFullYear();
+  renderLB(); renderSetup(); refreshScores();
+  if(myContestantId){ renderMyTeam(); loadMyTheme(); }
+}
+
 
 function showProfileScreen(){
   const ps = document.getElementById('profileScreen');
@@ -1491,15 +1494,6 @@ function doTrade(){
 // ════════════════════════════════════════════════
 function debugLog(msg){
   console.log(msg);
-  const t = new Date().toLocaleTimeString() + ' ' + msg;
-  ['debugLog','debugPanelLB','debugPanelProfile'].forEach(id=>{
-    const el = document.getElementById(id);
-    if(!el) return;
-    const line = document.createElement('div');
-    line.textContent = t;
-    el.appendChild(line);
-    el.scrollTop = el.scrollHeight;
-  });
 }
 
 function renderContestantsList(){
