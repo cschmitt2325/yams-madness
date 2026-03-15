@@ -785,6 +785,7 @@ async function pullState(){
   debugLog("[PULL] lastV:" + _lastPulledV);
   try{
     const remote=await dbGet('state');
+    debugLog("[PULL] remote:" + (remote ? "got data v=" + remote.v + " c=" + remote.S?.contestants?.length : "NULL - db returned nothing"));
     if(!remote){ setSyncStatus('synced'); return false; }
     // Use version timestamp to detect changes reliably
     const remoteV = remote.v || 0;
