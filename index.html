@@ -760,17 +760,17 @@ async function dbSet(key,val){
 }
 
 async function pushState(){
-  debugLog("[PUSH] contestants:" + S.contestants.length + " match:" + (JSON.stringify({S,META})===_lastPushed));
   const json=JSON.stringify({S,META});
   if(json===_lastPushed) return; // no local changes, skip
+  _lastPushed=json; // set immediately to prevent double-push
   const v=Date.now();
   const payload={S,META,v};
   setSyncStatus('syncing');
   try{
     const ok=await dbSet('state',payload);
-    if(ok){ _lastPushed=json; _lastPulledV=v; setSyncStatus('synced'); }
-    else setSyncStatus('offline');
-  }catch(e){ setSyncStatus('offline'); }
+    if(ok){ _lastPulledV=v; setSyncStatus('synced'); }
+    else{ _lastPushed=null; setSyncStatus('offline'); } // reset so retry works
+  }catch(e){ _lastPushed=null; setSyncStatus('offline'); }
 }
 
 async function pullState(){
@@ -989,7 +989,9 @@ function confirmProfile(){
     c.pin = pin;
   }
   myContestantId = c.id;
-  save();
+  // Force immediate push, don't debounce
+  _lastPushed = null; // clear so pushState won't skip
+  pushState();
   document.getElementById('profileScreen').style.display = 'none';
   enterApp();
 }
