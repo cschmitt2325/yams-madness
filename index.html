@@ -788,15 +788,17 @@ async function pullState(){
     if(!remote){ setSyncStatus('synced'); return false; }
     // Use version timestamp to detect changes reliably
     const remoteV = remote.v || 0;
+    const remoteJson = JSON.stringify({S: remote.S||{}, META: remote.META||{}});
     debugLog("[PULL] remoteV:" + remoteV + " remoteC:" + remote.S?.contestants?.length);
-    if(remoteV === _lastPulledV){
+    // If no version stamp OR version changed OR content changed — always apply
+    if(remoteV !== 0 && remoteV === _lastPulledV && remoteJson === _lastPushed){
       setSyncStatus('synced');
       return false;
     }
     S=remote.S||freshSeason();
     META=remote.META||freshMeta();
     _lastPulledV = remoteV;
-    _lastPushed=JSON.stringify({S,META});
+    _lastPushed=remoteJson;
     setSyncStatus('synced');
     return true;
   }catch(e){ setSyncStatus('offline'); return false; }
