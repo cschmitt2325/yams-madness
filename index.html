@@ -769,8 +769,6 @@ async function dbSet(key,val){
 
 async function pushState(){
   debugLog("[PUSH] contestants:" + S.contestants.length + " match:" + (JSON.stringify({S,META})===_lastPushed));
-  // Never push if state is completely empty (no contestants, teams, or players)
-  if(!S.contestants.length && !S.teams.length && !S.players.length && !_lastPushed) return;
   const json=JSON.stringify({S,META});
   if(json===_lastPushed) return; // no local changes, skip
   const v=Date.now();
