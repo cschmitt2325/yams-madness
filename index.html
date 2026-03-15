@@ -927,6 +927,7 @@ async function showProfileScreen(){
 }
 
 function profileCheckName(){
+  debugLog("[BTN] profileCheckName fired");
   const name = document.getElementById('profilePlayerName').value.trim();
   const errEl = document.getElementById('profileError');
   if(!name){ errEl.textContent='Enter your name.'; return; }
@@ -960,6 +961,7 @@ function profileBackToStep1(){
 }
 
 function confirmReturn(){
+  debugLog("[BTN] confirmReturn fired");
   const name = document.getElementById('profilePlayerName').value.trim();
   const pin  = document.getElementById('profileReturnPin').value.trim();
   const errEl = document.getElementById('profileReturnError');
@@ -977,6 +979,8 @@ function confirmReturn(){
 }
 
 function confirmProfile(){
+  try{
+  debugLog("[BTN] confirmProfile fired");
   debugLog("[CONFIRM-NEW] S.contestants:" + S.contestants.length);
   const name     = document.getElementById('profilePlayerName').value.trim();
   const teamName = document.getElementById('profileTeamName').value.trim();
@@ -1000,6 +1004,7 @@ function confirmProfile(){
   save();
   document.getElementById('profileScreen').style.display='none';
   enterApp();
+  }catch(e){ debugLog("[CONFIRM ERROR] " + e.message); }
 }
 
 function skipProfile(){
