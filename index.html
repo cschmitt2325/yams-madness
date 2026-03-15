@@ -346,7 +346,6 @@ select.input{cursor:pointer;}
   <div class="splash-ball">🏀</div>
   <div class="profile-logo">YAMS<small>Madness</small></div>
   <div class="profile-card">
-    <div id="debugPanelProfile" style="font-size:10px;font-family:monospace;background:rgba(0,0,0,0.3);border-radius:6px;padding:8px;max-height:100px;overflow-y:auto;margin-bottom:10px;color:#aaa;"></div>
 
     <!-- STEP 1: Name lookup -->
     <div id="profileStep1">
@@ -902,10 +901,12 @@ function shakeInput(){
   setTimeout(()=>{ inp.style.animation=''; inp.style.borderColor=''; },400);
 }
 
-function loginAs(r){
+async function loginAs(r){
   role=r;
   document.getElementById('splash').style.display='none';
   if(r==='player'){
+    // Pull fresh state before showing profile screen
+    try{ await pullState(); }catch(e){}
     showProfileScreen();
   } else {
     enterApp();
@@ -913,15 +914,14 @@ function loginAs(r){
 }
 
 function showProfileScreen(){
-  const ps=document.getElementById('profileScreen');
-  ps.style.display='flex';
-  // Reset to step 1
-  document.getElementById('profileStep1').style.display='block';
-  document.getElementById('profileStep2Return').style.display='none';
-  document.getElementById('profileStep2New').style.display='none';
-  document.getElementById('profilePlayerName').value='';
-  document.getElementById('profileError').textContent='';
-  setTimeout(()=>document.getElementById('profilePlayerName').focus(),100);
+  const ps = document.getElementById('profileScreen');
+  ps.style.display = 'flex';
+  document.getElementById('profileStep1').style.display = 'block';
+  document.getElementById('profileStep2Return').style.display = 'none';
+  document.getElementById('profileStep2New').style.display = 'none';
+  document.getElementById('profilePlayerName').value = '';
+  document.getElementById('profileError').textContent = '';
+  setTimeout(()=>document.getElementById('profilePlayerName').focus(), 100);
 }
 
 function profileCheckName(){
@@ -930,59 +930,55 @@ function profileCheckName(){
   if(!name){ errEl.textContent='Enter your name.'; return; }
   const existing = S.contestants.find(c=>c.name.toLowerCase()===name.toLowerCase());
   if(existing){
-    document.getElementById('profileStep1').style.display='none';
-    document.getElementById('profileStep2Return').style.display='block';
-    document.getElementById('profileReturnSubtitle').textContent = `Welcome back, ${existing.name}! Enter your PIN to access your team.`;
-    document.getElementById('profileReturnPin').value='';
-    document.getElementById('profileReturnError').textContent='';
-    setTimeout(()=>document.getElementById('profileReturnPin').focus(),100);
+    document.getElementById('profileStep1').style.display = 'none';
+    document.getElementById('profileStep2Return').style.display = 'block';
+    document.getElementById('profileReturnSubtitle').textContent = 'Welcome back, '+existing.name+'! Enter your PIN to access your team.';
+    document.getElementById('profileReturnPin').value = '';
+    document.getElementById('profileReturnError').textContent = '';
+    setTimeout(()=>document.getElementById('profileReturnPin').focus(), 100);
   } else {
-    document.getElementById('profileStep1').style.display='none';
-    document.getElementById('profileStep2New').style.display='block';
-    document.getElementById('profileTeamName').value='';
-    document.getElementById('profileNewPin').value='';
-    document.getElementById('profileNewPin2').value='';
-    document.getElementById('profileNewError').textContent='';
-    setTimeout(()=>document.getElementById('profileTeamName').focus(),100);
+    document.getElementById('profileStep1').style.display = 'none';
+    document.getElementById('profileStep2New').style.display = 'block';
+    document.getElementById('profileTeamName').value = '';
+    document.getElementById('profileNewPin').value = '';
+    document.getElementById('profileNewPin2').value = '';
+    document.getElementById('profileNewError').textContent = '';
+    setTimeout(()=>document.getElementById('profileTeamName').focus(), 100);
   }
 }
 
 function profileBackToStep1(){
-  document.getElementById('profileStep2Return').style.display='none';
-  document.getElementById('profileStep2New').style.display='none';
-  document.getElementById('profileStep1').style.display='block';
-  document.getElementById('profileError').textContent='';
-  setTimeout(()=>document.getElementById('profilePlayerName').focus(),100);
+  document.getElementById('profileStep1').style.display = 'block';
+  document.getElementById('profileStep2Return').style.display = 'none';
+  document.getElementById('profileStep2New').style.display = 'none';
+  document.getElementById('profileError').textContent = '';
+  setTimeout(()=>document.getElementById('profilePlayerName').focus(), 100);
 }
 
 function confirmReturn(){
   const name = document.getElementById('profilePlayerName').value.trim();
-  const pin  = document.getElementById('profileReturnPin').value.trim();
+  const pin = document.getElementById('profileReturnPin').value.trim();
   const errEl = document.getElementById('profileReturnError');
   const c = S.contestants.find(c=>c.name.toLowerCase()===name.toLowerCase());
   if(!c){ errEl.textContent='Player not found.'; return; }
   if(!pin){ errEl.textContent='Enter your PIN.'; return; }
-  if(c.pin && c.pin !== pin){ errEl.textContent='Incorrect PIN. Try again.'; return; }
-  // If no PIN set yet, accept and save it
+  if(c.pin && c.pin!==pin){ errEl.textContent='Incorrect PIN. Try again.'; return; }
   if(!c.pin) c.pin = pin;
   myContestantId = c.id;
-  debugLog("[CONFIRM-RETURN] contestants:" + S.contestants.length);
   save();
-  document.getElementById('profileScreen').style.display='none';
+  document.getElementById('profileScreen').style.display = 'none';
   enterApp();
 }
 
 function confirmProfile(){
-  try{
-  debugLog("[CONFIRM-NEW] S.contestants:" + S.contestants.length);
-  const name     = document.getElementById('profilePlayerName').value.trim();
+  const name = document.getElementById('profilePlayerName').value.trim();
   const teamName = document.getElementById('profileTeamName').value.trim();
-  const pin      = document.getElementById('profileNewPin').value.trim();
-  const pin2     = document.getElementById('profileNewPin2').value.trim();
-  const errEl    = document.getElementById('profileNewError');
+  const pin = document.getElementById('profileNewPin').value.trim();
+  const pin2 = document.getElementById('profileNewPin2').value.trim();
+  const errEl = document.getElementById('profileNewError');
   if(!teamName){ errEl.textContent='Enter a team name.'; return; }
-  if(!pin || pin.length!==4 || isNaN(pin)){ errEl.textContent='Choose a 4-digit PIN (numbers only).'; return; }
-  if(pin !== pin2){ errEl.textContent='PINs do not match.'; return; }
+  if(!pin||pin.length!==4||isNaN(pin)){ errEl.textContent='Choose a 4-digit PIN (numbers only).'; return; }
+  if(pin!==pin2){ errEl.textContent='PINs do not match.'; return; }
   let c = S.contestants.find(c=>c.name.toLowerCase()===name.toLowerCase());
   if(!c){
     c = {id:uid(), name, teamName, pin, players:[], trades:{s19:true,s10:true}, tradeHistory:[]};
@@ -993,29 +989,22 @@ function confirmProfile(){
     c.pin = pin;
   }
   myContestantId = c.id;
-  debugLog("[CONFIRM-NEW done] contestants:" + S.contestants.length);
   save();
-  document.getElementById('profileScreen').style.display='none';
+  document.getElementById('profileScreen').style.display = 'none';
   enterApp();
-  }catch(e){ debugLog("[CONFIRM ERROR] " + e.message); }
 }
 
 function skipProfile(){
-  myContestantId=null;
-  document.getElementById('profileScreen').style.display='none';
+  myContestantId = null;
+  document.getElementById('profileScreen').style.display = 'none';
   enterApp();
 }
 
-async function enterApp(){
-  // Pull latest state before rendering
-  try{ await pullState(); }catch(e){}
-  const app=document.getElementById('app');
-  app.style.display='flex';
-  applyRole();
-  document.getElementById('seasonTag').textContent=META.year;
-  renderLB(); renderSetup(); refreshScores();
-  if(myContestantId){ renderMyTeam(); loadMyTheme(); }
-}
+
+
+
+
+
 
 function applyRole(){
   const isAdmin=role==='admin';
