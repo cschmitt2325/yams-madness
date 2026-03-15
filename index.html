@@ -901,13 +901,12 @@ function shakeInput(){
   setTimeout(()=>{ inp.style.animation=''; inp.style.borderColor=''; },400);
 }
 
-async function loginAs(r){
+function loginAs(r){
   role=r;
   document.getElementById('splash').style.display='none';
   if(r==='player'){
-    // Pull fresh state before showing profile screen
-    try{ await pullState(); }catch(e){}
-    showProfileScreen();
+    // Pull fresh state then show profile
+    pullState().catch(()=>{}).finally(()=>showProfileScreen());
   } else {
     enterApp();
   }
