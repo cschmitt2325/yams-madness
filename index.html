@@ -346,6 +346,7 @@ select.input{cursor:pointer;}
   <div class="splash-ball">🏀</div>
   <div class="profile-logo">YAMS<small>Madness</small></div>
   <div class="profile-card">
+    <div id="debugPanelProfile" style="font-size:10px;font-family:monospace;background:rgba(0,0,0,0.3);border-radius:6px;padding:8px;max-height:100px;overflow-y:auto;margin-bottom:10px;color:#aaa;"></div>
 
     <!-- STEP 1: Name lookup -->
     <div id="profileStep1">
@@ -1505,7 +1506,7 @@ function doTrade(){
 function debugLog(msg){
   console.log(msg);
   const t = new Date().toLocaleTimeString() + ' ' + msg;
-  ['debugLog','debugPanelLB'].forEach(id=>{
+  ['debugLog','debugPanelLB','debugPanelProfile'].forEach(id=>{
     const el = document.getElementById(id);
     if(!el) return;
     const line = document.createElement('div');
