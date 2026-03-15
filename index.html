@@ -769,6 +769,8 @@ async function dbSet(key,val){
 
 async function pushState(){
   debugLog("[PUSH] contestants:" + S.contestants.length + " match:" + (JSON.stringify({S,META})===_lastPushed));
+  // Never push if state is completely empty (no contestants, teams, or players)
+  if(!S.contestants.length && !S.teams.length && !S.players.length && !_lastPushed) return;
   const json=JSON.stringify({S,META});
   if(json===_lastPushed) return; // no local changes, skip
   const v=Date.now();
@@ -912,7 +914,9 @@ function loginAs(r){
   }
 }
 
-function showProfileScreen(){
+async function showProfileScreen(){
+  // Always pull latest state before showing profile so we have fresh contestant list
+  try{ await pullState(); }catch(e){}
   const ps=document.getElementById('profileScreen');
   ps.style.display='flex';
   // Reset to step 1
@@ -1006,7 +1010,9 @@ function skipProfile(){
   enterApp();
 }
 
-function enterApp(){
+async function enterApp(){
+  // Pull latest state before rendering
+  try{ await pullState(); }catch(e){}
   const app=document.getElementById('app');
   app.style.display='flex';
   applyRole();
@@ -1689,6 +1695,7 @@ function renderGameStrip(events){
 }
 
 async function updatePlayerStats(events){
+  let statsChanged=false;
   for(const ev of events){
     try{
       const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/summary?event=${ev.id}`);
@@ -1702,13 +1709,13 @@ async function updatePlayerStats(events){
           if(mt&&pts>0){
             const last=a.athlete?.displayName?.split(' ').pop()?.toLowerCase()||'';
             const mp=S.players.find(p=>p.teamId===mt.id&&p.name.toLowerCase().includes(last));
-            if(mp) mp.ts={pts,reb,ast};
+            if(mp){ mp.ts={pts,reb,ast}; statsChanged=true; }
           }
         });
       });
     }catch(e){}
   }
-  save();
+  if(statsChanged) save();
 }
 
 async function testAPI(){
