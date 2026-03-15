@@ -774,14 +774,12 @@ async function pushState(){
 }
 
 async function pullState(){
-  debugLog("[PULL] lastV:" + _lastPulledV);
   try{
     const remote=await dbGet('state');
-    debugLog("[PULL] remote:" + (remote ? "got data v=" + remote.v + " c=" + remote.S?.contestants?.length : "NULL - db returned nothing"));
+    console.log("[PULL] remote:" + (remote ? "got data v=" + remote.v + " c=" + remote.S?.contestants?.length : "NULL - db returned nothing"));
     if(!remote){ setSyncStatus('synced'); return false; }
     // Use version timestamp to detect changes reliably
     const remoteV = remote.v || 0;
-    debugLog("[PULL] remoteV:" + remoteV + " remoteC:" + remote.S?.contestants?.length);
     // Only skip if version matches (reliable check)
     if(remoteV !== 0 && remoteV === _lastPulledV){
       setSyncStatus('synced');
@@ -820,17 +818,15 @@ function startRealtime(){
         if(changed){ rerenderAll(); toast('↓ Live update','info'); }
       })
       .subscribe((status)=>{
-        if(status==='SUBSCRIBED') debugLog('Realtime connected');
+        if(status==='SUBSCRIBED') console.log('Realtime connected');
       });
-  }catch(e){ debugLog('Realtime unavailable, polling only'); }
+  }catch(e){ console.log('Realtime unavailable, polling only'); }
   // Always poll as backup
   setInterval(async()=>{
-    debugLog("[POLL tick]");
     try{
       const changed=await pullState();
-      debugLog("[POLL] changed:" + changed);
       if(changed) rerenderAll();
-    }catch(e){ debugLog("[POLL error]:" + e.message); }
+    }catch(e){}
   },5000);
 }
 
@@ -1492,12 +1488,9 @@ function doTrade(){
 // ════════════════════════════════════════════════
 // SETUP
 // ════════════════════════════════════════════════
-function debugLog(msg){
-  console.log(msg);
-}
+
 
 function renderContestantsList(){
-  debugLog("[RENDER] contestants:" + S.contestants.length);
   const cl = document.getElementById('contestantsList');
   if(cl){
     if(!S.contestants.length){
