@@ -927,14 +927,12 @@ async function showProfileScreen(){
 }
 
 function profileCheckName(){
-  alert("profileCheckName called - name=" + document.getElementById("profilePlayerName").value);
-  debugLog("[BTN] profileCheckName fired");
   const name = document.getElementById('profilePlayerName').value.trim();
   const errEl = document.getElementById('profileError');
   if(!name){ errEl.textContent='Enter your name.'; return; }
   const existing = S.contestants.find(c=>c.name.toLowerCase()===name.toLowerCase());
+  alert("existing=" + (existing?existing.name:"none") + " S.contestants=" + S.contestants.length);
   if(existing){
-    // Returning player
     document.getElementById('profileStep1').style.display='none';
     document.getElementById('profileStep2Return').style.display='block';
     document.getElementById('profileReturnSubtitle').textContent = `Welcome back, ${existing.name}! Enter your PIN to access your team.`;
@@ -942,9 +940,12 @@ function profileCheckName(){
     document.getElementById('profileReturnError').textContent='';
     setTimeout(()=>document.getElementById('profileReturnPin').focus(),100);
   } else {
-    // New player
-    document.getElementById('profileStep1').style.display='none';
-    document.getElementById('profileStep2New').style.display='block';
+    alert("showing step2New now");
+    const s1=document.getElementById('profileStep1');
+    const s2=document.getElementById('profileStep2New');
+    alert("s1="+s1+" s2="+s2);
+    s1.style.display='none';
+    s2.style.display='block';
     document.getElementById('profileTeamName').value='';
     document.getElementById('profileNewPin').value='';
     document.getElementById('profileNewPin2').value='';
