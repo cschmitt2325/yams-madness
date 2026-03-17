@@ -142,6 +142,8 @@ select.input{cursor:pointer;}
 /* ── DRAFT ── */
 .draft-banner{background:linear-gradient(90deg,rgba(245,166,35,.1),rgba(232,82,26,.1));border:1px solid rgba(245,166,35,.25);border-radius:var(--r);padding:14px 16px;margin-bottom:16px;display:none;}
 .draft-banner.active{display:flex;align-items:center;gap:12px;}
+.draft-banner.my-turn{background:linear-gradient(90deg,rgba(52,199,89,.15),rgba(48,176,77,.1));border-color:rgba(52,199,89,.5);animation:pulseGreen 2s ease-in-out infinite;}
+@keyframes pulseGreen{0%,100%{box-shadow:0 0 0 0 rgba(52,199,89,.3);}50%{box-shadow:0 0 0 6px rgba(52,199,89,0);}}
 .db-icon{font-size:28px;flex-shrink:0;}
 .db-label{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--gold);font-weight:700;}
 .db-picker{font-size:18px;font-weight:700;line-height:1.2;margin-top:2px;}
@@ -592,9 +594,9 @@ select.input{cursor:pointer;}
 <div class="sheet-overlay" id="sheetOverlay" onclick="closeSheet()"></div>
 <div class="pick-sheet" id="pickSheet">
   <div class="sheet-handle"></div>
-  <div class="sheet-title">Draft Pick</div>
+  <div class="sheet-title" id="pickSheetTitle">Draft Pick</div>
   <div class="pick-info" id="pickInfo"></div>
-  <div class="form-group"><label class="label">Who's picking?</label><select class="input" id="pickContestant" onchange="checkPick()"></select></div>
+  <div class="form-group"><label class="label" id="pickContestantLabel">Who's picking?</label><select class="input" id="pickContestant" onchange="checkPick()"></select></div>
   <div class="pick-warning" id="pickWarn"></div>
   <div class="pick-error" id="pickErr"></div>
   <button class="btn full green" id="confirmPickBtn" onclick="confirmPick()">Confirm Pick 🏀</button>
@@ -1186,8 +1188,10 @@ function renderDraft(){
     const c=S.contestants.find(c=>c.id===p.draftedBy);
     const ci=S.contestants.indexOf(c);
     const drafted=!!p.draftedBy;
-    const clickable=!drafted&&S.draft.active;
-    return `<div class="player-card ${drafted?'drafted':''}" ${clickable?`onclick="openPickSheet('${p.id}')"`:''}>
+    const myTurn=S.draft.active&&myContestantId&&(S.draft.order[S.draft.currentIdx%S.draft.order.length]===myContestantId);
+    const clickable=!drafted&&S.draft.active&&(role==='admin'||myTurn);
+    const waitingContestant=!drafted&&S.draft.active&&role!=='admin'&&myContestantId&&!myTurn;
+    return `<div class="player-card ${drafted?'drafted':''}" ${clickable?`onclick="openPickSheet('${p.id}')"`:''} style="${waitingContestant?'opacity:0.55;cursor:not-allowed;':''}">
       <div class="seed-box ${sc}">${t.seed}</div>
       <div class="pc-info">
         <div class="pc-name">${p.name}</div>
@@ -1201,6 +1205,7 @@ function renderDraft(){
       <div style="text-align:right;">
         <div class="pc-combo">${combo}<small>avg</small></div>
         ${drafted?`<div class="drafted-tag ${colorClass(ci)}">📌 ${c?.name||''}</div>`:''}
+        ${waitingContestant?`<div style="font-size:11px;color:var(--t3);margin-top:4px;">⏳ not your turn</div>`:''}
       </div>
     </div>`;
   }).join('');
@@ -1215,8 +1220,10 @@ function updateDraftBanner(){
   const idx=S.draft.currentIdx%ord.length;
   const c=S.contestants.find(c=>c.id===ord[idx]);
   const round=Math.floor(S.draft.currentIdx/ord.length)+1;
-  document.getElementById('draftBannerPicker').textContent=c?.name||'—';
-  document.getElementById('draftBannerSub').textContent=`Round ${round} · Pick ${S.draft.currentIdx+1}`;
+  const isMyTurn=myContestantId&&ord[idx]===myContestantId;
+  banner.classList.toggle('my-turn', !!isMyTurn);
+  document.getElementById('draftBannerPicker').textContent=isMyTurn?'🟢 Your turn!':c?.name||'—';
+  document.getElementById('draftBannerSub').textContent=isMyTurn?`Round ${round} · Pick ${S.draft.currentIdx+1} — tap a player to draft`:`Round ${round} · Pick ${S.draft.currentIdx+1}${role!=='admin'?' · Waiting for '+c?.name:''}`;
 }
 
 // ════════════════════════════════════════════════
@@ -1228,13 +1235,29 @@ function openPickSheet(playerId){
   const t=S.teams.find(t=>t.id===p.teamId);
   document.getElementById('pickInfo').innerHTML=`<div class="pick-player-name">${p.name}</div><div class="pick-details">${t?.name} · Seed ${t?.seed} · ${t?.region} | ${(p.pts+p.reb+p.ast).toFixed(1)} avg</div>`;
   const sel=document.getElementById('pickContestant');
-  sel.innerHTML='<option value="">— Who\'s picking? —</option>';
-  let preSelect=S.draft.active?S.draft.order[S.draft.currentIdx%S.draft.order.length]:'';
-  S.contestants.forEach(c=>{ sel.innerHTML+=`<option value="${c.id}" ${c.id===preSelect?'selected':''}>${c.name} (${c.players.length}/7)</option>`; });
-  document.getElementById('pickWarn').style.display='none';
-  document.getElementById('pickErr').style.display='none';
-  document.getElementById('confirmPickBtn').disabled=false;
-  if(preSelect) checkPick();
+  const myTurnId=S.draft.active?S.draft.order[S.draft.currentIdx%S.draft.order.length]:'';
+  // Contestant self-serve: hide dropdown, auto-select themselves
+  if(role!=='admin'&&myContestantId){
+    document.getElementById('pickSheetTitle').textContent='Your Pick 🏀';
+    document.getElementById('pickContestantLabel').style.display='none';
+    sel.innerHTML=`<option value="${myContestantId}" selected></option>`;
+    sel.style.display='none';
+    document.getElementById('pickWarn').style.display='none';
+    document.getElementById('pickErr').style.display='none';
+    document.getElementById('confirmPickBtn').disabled=false;
+    checkPick();
+  } else {
+    // Commissioner view: show full dropdown
+    document.getElementById('pickSheetTitle').textContent='Draft Pick';
+    document.getElementById('pickContestantLabel').style.display='';
+    sel.style.display='';
+    sel.innerHTML='<option value="">— Who\'s picking? —</option>';
+    S.contestants.forEach(c=>{ sel.innerHTML+=`<option value="${c.id}" ${c.id===myTurnId?'selected':''}>${c.name} (${c.players.length}/7)</option>`; });
+    document.getElementById('pickWarn').style.display='none';
+    document.getElementById('pickErr').style.display='none';
+    document.getElementById('confirmPickBtn').disabled=false;
+    if(myTurnId) checkPick();
+  }
   document.getElementById('sheetOverlay').classList.add('open');
   document.getElementById('pickSheet').classList.add('open');
 }
