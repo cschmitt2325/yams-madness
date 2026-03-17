@@ -1241,10 +1241,11 @@ function updateDraftBanner(){
   const ord=S.draft.order; if(!ord.length) return;
   const c=S.contestants.find(c=>c.id===snakePicker(S.draft.currentIdx,ord));
   const round=Math.floor(S.draft.currentIdx/ord.length)+1;
-  const isMyTurn=myContestantId&&ord[idx]===myContestantId;
+  const isMyTurn=myContestantId&&snakePicker(S.draft.currentIdx,ord)===myContestantId;
   banner.classList.toggle('my-turn', !!isMyTurn);
-  document.getElementById('draftBannerPicker').textContent=isMyTurn?'🟢 Your turn!':c?.name||'—';
-  document.getElementById('draftBannerSub').textContent=isMyTurn?`Round ${round} · Pick ${S.draft.currentIdx+1} — tap a player to draft`:`Round ${round} · Pick ${S.draft.currentIdx+1}${role!=='admin'?' · Waiting for '+c?.name:''}`;
+  const cName=c?.name||'(loading...)';
+  document.getElementById('draftBannerPicker').textContent=isMyTurn?'🟢 Your turn!':cName+' is picking';
+  document.getElementById('draftBannerSub').textContent=isMyTurn?`Round ${round} · Pick ${S.draft.currentIdx+1} — tap a player to draft`:`Round ${round} · Pick ${S.draft.currentIdx+1} · Waiting for ${cName}`;
 }
  
 // ════════════════════════════════════════════════
