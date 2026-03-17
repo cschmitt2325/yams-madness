@@ -551,6 +551,17 @@ select.input{cursor:pointer;}
     </div>
 
     <div class="setup-section">
+      <div class="sec-label">🎮 Play-in Games</div>
+      <div class="card card-sm">
+        <p style="font-size:13px;color:var(--t2);margin-bottom:12px;line-height:1.6;">While play-in games are active, tournament stats do <strong style="color:var(--text);">not</strong> count toward scores. Enable scoring once the Round of 64 begins.</p>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span id="playInStatusLabel" style="font-size:14px;font-weight:600;"></span>
+          <button class="btn sm" id="playInToggleBtn" onclick="togglePlayIn()">…</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="setup-section">
       <div class="sec-label">📋 Bracket Import</div>
       <div class="card card-sm">
         <p style="font-size:13px;color:var(--t2);margin-bottom:12px;line-height:1.6;">Paste the full bracket list to auto-populate all teams and players at once. Use the format Claude gives you on March 16.</p>
@@ -654,7 +665,17 @@ select.input{cursor:pointer;}
   <div class="stat-row"><div class="stat-label">AST</div><input class="stat-input" id="sAST" type="number" step="0.1" placeholder="0"></div>
   <button class="btn full" style="margin-top:4px;" onclick="saveStats()">Save Stats</button>
   <button class="btn full danger" style="margin-top:8px;" id="elimBtn" onclick="elimPlayer()">Mark Eliminated</button>
+  <button class="btn full warn" style="margin-top:8px;" id="removeFromRosterBtn" onclick="removeFromRoster()">↩ Remove from Roster</button>
   <button class="btn full sec" style="margin-top:8px;" onclick="closeM('editStats')">Cancel</button>
+</div></div>
+
+<div class="modal-bg" id="m-addToRoster"><div class="modal" style="max-height:90vh;overflow-y:auto;">
+  <div class="modal-handle"></div>
+  <div class="modal-title">Add Player to Roster</div>
+  <div id="addToRosterSub" style="font-size:13px;color:var(--t2);margin-bottom:12px;margin-top:-12px;"></div>
+  <input class="input" id="addToRosterSearch" placeholder="🔍 Search player or team…" oninput="renderAddToRosterList()" style="margin-bottom:12px;">
+  <div id="addToRosterList" style="max-height:340px;overflow-y:auto;"></div>
+  <button class="btn full sec" style="margin-top:12px;" onclick="closeM('addToRoster')">Cancel</button>
 </div></div>
 
 <div class="modal-bg" id="m-newSeason"><div class="modal">
@@ -744,7 +765,7 @@ function freshSeason(){
   return {contestants:[],teams:[],players:[],weights:{pts:1,reb:1,ast:1},draft:{active:false,currentIdx:0,order:[]},rounds:{}};
 }
 function freshMeta(){
-  return {year:new Date().getFullYear(),leaguePw:'yams2025',adminPw:'commissioner',archives:[]};
+  return {year:new Date().getFullYear(),leaguePw:'yams2025',adminPw:'commissioner',archives:[],playInActive:false};
 }
 
 // ════════════════════════════════════════════════
@@ -1309,6 +1330,7 @@ function confirmPick(){
 // LEADERBOARD
 // ════════════════════════════════════════════════
 function calcScore(c){
+  if(META.playInActive) return 0;
   return c.players.reduce((t,pid)=>{
     const p=S.players.find(pl=>pl.id===pid);
     if(!p||p.eliminated) return t;
@@ -1319,8 +1341,9 @@ function calcScore(c){
 function renderLB(){
   const list=document.getElementById('lbList');
   if(!S.contestants.length){ list.innerHTML=`<div class="empty"><div class="ei">🏀</div><p>No contestants yet.</p></div>`; return; }
+  const playInBanner=META.playInActive?`<div style="background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.3);border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--gold);font-weight:600;">🎮 Play-in period active — scoring begins at Round of 64</div>`:'';
   const ranked=[...S.contestants].sort((a,b)=>calcScore(b)-calcScore(a));
-  list.innerHTML=ranked.map((c,i)=>{
+  list.innerHTML=playInBanner+ranked.map((c,i)=>{
     const score=calcScore(c);
     const active=c.players.filter(pid=>{ const p=S.players.find(p=>p.id===pid); return p&&!p.eliminated; }).length;
     const rClass=i===0?'r1':i===1?'r2':i===2?'r3':'';
@@ -1366,14 +1389,15 @@ function renderRoster(cId){
   const rows=c.players.map(pid=>{
     const p=S.players.find(pl=>pl.id===pid); const t=p?S.teams.find(t=>t.id===p.teamId):null;
     if(!p||!t) return '';
-    const score=p.eliminated?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
+    const score=(p.eliminated||META.playInActive)?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
     return `<div class="roster-row ${p.eliminated?'out':''}">
       <div class="roster-player"><div class="roster-pname">${p.name}</div><div class="roster-team">${t.name} · ${t.seed}-seed${p.eliminated?' · ELIM':''}</div></div>
       <div class="roster-stats">${score.toFixed(1)}<small>${p.ts.pts}/${p.ts.reb}/${p.ts.ast}</small></div>
       ${isAdmin?`<button class="btn xs sec" onclick="openEditStats('${pid}','${cId}');event.stopPropagation()">✏️</button>`:''}
     </div>`;
   }).join('');
-  el.innerHTML=`<div class="roster-expand">${rows||'<div style="color:var(--t3);font-size:13px;">No players drafted.</div>'}<div style="margin-top:12px;display:flex;justify-content:flex-end;"><span style="font-family:\'Barlow Condensed\',sans-serif;font-size:20px;font-weight:700;color:var(--gold);">${total.toFixed(1)} pts</span></div></div>`;
+  const addBtn=isAdmin&&c.players.length<7?`<button class="btn sm" style="margin-top:10px;width:100%;" onclick="openAddToRoster('${cId}');event.stopPropagation()">＋ Add Player</button>`:''; 
+  el.innerHTML=`<div class="roster-expand">${rows||'<div style="color:var(--t3);font-size:13px;">No players drafted.</div>'}${addBtn}<div style="margin-top:12px;display:flex;justify-content:flex-end;"><span style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;color:var(--gold);">${total.toFixed(1)} pts</span></div></div>`;
 }
 
 // ════════════════════════════════════════════════
@@ -1407,9 +1431,87 @@ function elimPlayer(){
   toast(p.eliminated?p.name+' eliminated':'Restored '+p.name,p.eliminated?'err':'ok');
 }
 
+function removeFromRoster(){
+  if(!editingPlayerId||!editingContestantId) return;
+  const p=S.players.find(pl=>pl.id===editingPlayerId);
+  const c=S.contestants.find(c=>c.id===editingContestantId);
+  if(!p||!c) return;
+  if(!confirm(`Remove ${p.name} from ${c.name}'s roster? They return to the undrafted pool.`)) return;
+  p.draftedBy=null;
+  c.players=c.players.filter(pid=>pid!==editingPlayerId);
+  save(); closeM('editStats'); renderLB(); renderTrades();
+  toast(`↩ ${p.name} removed from ${c.name}'s roster`,'ok');
+}
+
+let addToRosterContestantId=null;
+function openAddToRoster(cId){
+  addToRosterContestantId=cId;
+  const c=S.contestants.find(c=>c.id===cId);
+  document.getElementById('addToRosterSub').textContent=`Adding to ${c?.name}'s roster (${c?.players.length}/7 players)`;
+  document.getElementById('addToRosterSearch').value='';
+  renderAddToRosterList();
+  openM('addToRoster');
+}
+
+function renderAddToRosterList(){
+  const q=document.getElementById('addToRosterSearch').value.toLowerCase();
+  const c=S.contestants.find(c=>c.id===addToRosterContestantId);
+  const undrafted=S.players.filter(p=>!p.draftedBy&&!p.eliminated&&
+    (p.name.toLowerCase().includes(q)||
+     (S.teams.find(t=>t.id===p.teamId)?.name||'').toLowerCase().includes(q)));
+  const div=document.getElementById('addToRosterList');
+  if(!undrafted.length){ div.innerHTML=`<div style="color:var(--t3);font-size:13px;padding:12px 0;">No undrafted players found.</div>`; return; }
+  div.innerHTML=undrafted.map(p=>{
+    const t=S.teams.find(t=>t.id===p.teamId);
+    const combo=(p.pts+p.reb+p.ast).toFixed(1);
+    return `<div class="player-card" onclick="addToRoster('${p.id}')" style="cursor:pointer;">
+      <div class="seed-box ${t?.seed<=9?'top':'bot'}">${t?.seed}</div>
+      <div class="pc-info">
+        <div class="pc-name">${p.name}</div>
+        <div class="pc-team">${t?.name} · ${t?.region}</div>
+        <div class="pc-stats">
+          <span class="pc-stat">PTS <span>${p.pts.toFixed(1)}</span></span>
+          <span class="pc-stat">REB <span>${p.reb.toFixed(1)}</span></span>
+          <span class="pc-stat">AST <span>${p.ast.toFixed(1)}</span></span>
+        </div>
+      </div>
+      <div style="text-align:right;"><div class="pc-combo">${combo}<small>avg</small></div></div>
+    </div>`;
+  }).join('');
+}
+
+function addToRoster(playerId){
+  const c=S.contestants.find(c=>c.id===addToRosterContestantId);
+  const p=S.players.find(p=>p.id===playerId);
+  if(!c||!p) return;
+  if(c.players.length>=7){ toast('Roster full (7 max)','err'); return; }
+  p.draftedBy=c.id;
+  c.players.push(p.id);
+  save(); closeM('addToRoster'); renderLB(); renderTrades();
+  toast(`✅ ${p.name} added to ${c.name}'s roster`,'ok');
+}
+
 // ════════════════════════════════════════════════
-// TRADES
+// PLAY-IN TOGGLE
 // ════════════════════════════════════════════════
+function togglePlayIn(){
+  META.playInActive=!META.playInActive;
+  save(); renderSetup(); renderLB();
+  toast(META.playInActive?'🎮 Play-in period active — scores paused':'✅ Round of 64 scoring started!','ok');
+}
+
+function renderPlayInToggle(){
+  const active=!!META.playInActive;
+  const label=document.getElementById('playInStatusLabel');
+  const btn=document.getElementById('playInToggleBtn');
+  if(!label||!btn) return;
+  label.textContent=active?'🎮 Play-in Active — scoring paused':'✅ Round of 64 — scoring live';
+  label.style.color=active?'var(--gold)':'var(--green)';
+  btn.textContent=active?'End Play-in Period':'Enable Play-in Mode';
+  btn.className=active?'btn sm':'btn sm sec';
+}
+
+
 function renderTrades(){
   const div=document.getElementById('tradesList');
   if(!S.contestants.length){ div.innerHTML=`<div class="empty"><div class="ei">🔄</div><p>No contestants yet.</p></div>`; return; }
@@ -1567,6 +1669,7 @@ function renderSetup(){
   document.getElementById('wPTS').value=S.weights.pts;
   document.getElementById('wREB').value=S.weights.reb;
   document.getElementById('wAST').value=S.weights.ast;
+  renderPlayInToggle();
   renderArchive();
 }
 
@@ -1876,7 +1979,7 @@ function renderMyTeam(){
   const rosterHtml=c.players.map(pid=>{
     const p=S.players.find(pl=>pl.id===pid); const t=p?S.teams.find(t=>t.id===p.teamId):null;
     if(!p||!t) return '';
-    const sc=p.eliminated?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
+    const sc=(p.eliminated||META.playInActive)?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
     return `<div class="mt-player-row ${p.eliminated?'elim':''}">
       <div style="flex:1;">
         <div class="mt-pname">${p.name}</div>
