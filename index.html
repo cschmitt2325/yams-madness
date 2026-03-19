@@ -1345,7 +1345,7 @@ function calcScore(c){
   if(META.playInActive) return 0;
   return c.players.reduce((t,pid)=>{
     const p=S.players.find(pl=>pl.id===pid);
-    if(!p||p.eliminated) return t;
+    if(!p) return t;
     return t+(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
   },0);
 }
@@ -1401,7 +1401,7 @@ function renderRoster(cId){
   const rows=c.players.map(pid=>{
     const p=S.players.find(pl=>pl.id===pid); const t=p?S.teams.find(t=>t.id===p.teamId):null;
     if(!p||!t) return '';
-    const score=(p.eliminated||META.playInActive)?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
+    const score=META.playInActive?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
     return `<div class="roster-row ${p.eliminated?'out':''}">
       <div class="roster-player"><div class="roster-pname">${p.name}</div><div class="roster-team">${t.name} · ${t.seed}-seed${p.eliminated?' · ELIM':''}</div></div>
       <div class="roster-stats">${score.toFixed(1)}<small>${p.ts.pts}/${p.ts.reb}/${p.ts.ast}</small></div>
@@ -1999,7 +1999,7 @@ function renderMyTeam(){
   const rosterHtml=c.players.map(pid=>{
     const p=S.players.find(pl=>pl.id===pid); const t=p?S.teams.find(t=>t.id===p.teamId):null;
     if(!p||!t) return '';
-    const sc=(p.eliminated||META.playInActive)?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
+    const sc=META.playInActive?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
     return `<div class="mt-player-row ${p.eliminated?'elim':''}">
       <div style="flex:1;">
         <div class="mt-pname">${p.name}</div>
