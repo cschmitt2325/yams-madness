@@ -2203,84 +2203,80 @@ async function fetchLiveStats(){
     const today = new Date();
     const pad = n => String(n).padStart(2,'0');
     const dateStr = `${today.getFullYear()}${pad(today.getMonth()+1)}${pad(today.getDate())}`;
-    
-    // Get today's tournament games
-    const sbUrl = `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=100&limit=50&dates=${dateStr}`;
-    const sbRes = await fetch(sbUrl);
-    if(!sbRes.ok) return;
+
+    // Fetch all NCAAM games today - no tournament filter, just grab everything
+    const sbRes = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?limit=50&dates=${dateStr}`);
+    if(!sbRes.ok){ console.warn('Scoreboard fetch failed:', sbRes.status); return; }
     const sbData = await sbRes.json();
-    const events = (sbData.events||[]).filter(e => {
-      const notes = (e.notes||[]).map(n=>n.headline||'').join(' ');
-      return notes.includes("Championship") || notes.includes("Tournament") || (e.tournament);
-    });
-    
-    if(!events.length) return;
+    const events = sbData.events || [];
+
+    if(!events.length){ console.log('No games found today'); return; }
 
     let anyChange = false;
 
     for(const event of events){
       const status = event.status?.type?.name;
-      // Only process in-progress or completed games
       if(status !== 'STATUS_IN_PROGRESS' && status !== 'STATUS_FINAL') continue;
 
       const gameId = event.id;
-      const boxUrl = `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/summary?event=${gameId}`;
-      const boxRes = await fetch(boxUrl);
-      if(!boxRes.ok) continue;
-      const boxData = await boxRes.json();
+      let boxData;
+      try {
+        const boxRes = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/summary?event=${gameId}`);
+        if(!boxRes.ok) continue;
+        boxData = await boxRes.json();
+      } catch(e){ continue; }
 
-      const players = boxData.boxscore?.players || [];
-      for(const teamStats of players){
-        const teamName = teamStats.team?.displayName || '';
-        const statistics = teamStats.statistics || [];
-        // Find the stat categories
-        const statBlock = statistics[0]; // first stat type block has per-player rows
+      const playerGroups = boxData.boxscore?.players || [];
+      for(const teamBlock of playerGroups){
+        const statGroups = teamBlock.statistics || [];
+        const statBlock = statGroups[0];
         if(!statBlock) continue;
-        const labels = statBlock.labels || []; // e.g. ['MIN','FG','3PT','FT','OREB','DREB','REB','AST','STL','BLK','TO','PF','PTS']
+
+        const labels = statBlock.labels || [];
         const ptsIdx = labels.indexOf('PTS');
         const rebIdx = labels.indexOf('REB');
         const astIdx = labels.indexOf('AST');
-        if(ptsIdx<0||rebIdx<0||astIdx<0) continue;
+        if(ptsIdx<0 || rebIdx<0 || astIdx<0) continue;
 
         const athletes = statBlock.athletes || [];
         for(const athlete of athletes){
           const espnName = athlete.athlete?.displayName || '';
           const stats = athlete.stats || [];
           if(!stats.length) continue;
-          const pts = parseFloat(stats[ptsIdx])||0;
-          const reb = parseFloat(stats[rebIdx])||0;
-          const ast = parseFloat(stats[astIdx])||0;
+
+          const pts = parseFloat(stats[ptsIdx]) || 0;
+          const reb = parseFloat(stats[rebIdx]) || 0;
+          const ast = parseFloat(stats[astIdx]) || 0;
 
           const p = matchPlayer(espnName);
           if(!p) continue;
 
-          // Only update if stats actually changed
           if(p.ts.pts !== pts || p.ts.reb !== reb || p.ts.ast !== ast){
             p.ts.pts = pts;
             p.ts.reb = reb;
             p.ts.ast = ast;
             anyChange = true;
+            console.log(`Updated ${p.name}: ${pts}/${reb}/${ast}`);
           }
         }
       }
 
-      // Handle elimination: if game is final, mark losing team's players eliminated
+      // Auto-eliminate losing team when game is final
       if(status === 'STATUS_FINAL'){
         const competitors = event.competitions?.[0]?.competitors || [];
-        if(competitors.length === 2){
-          const loser = competitors.find(c => c.winner === false);
-          if(loser){
-            const loserName = loser.team?.displayName || loser.team?.shortDisplayName || '';
-            const team = S.teams.find(t => {
-              const tn = t.name.toLowerCase();
-              const ln = loserName.toLowerCase();
-              return tn.includes(ln) || ln.includes(tn) || tn.split(' ').some(w => w.length>3 && ln.includes(w));
-            });
-            if(team && !team.eliminated){
-              team.eliminated = true;
-              S.players.filter(p=>p.teamId===team.id).forEach(p=>p.eliminated=true);
-              anyChange = true;
-            }
+        const loser = competitors.find(c => c.winner === false);
+        if(loser){
+          const loserName = (loser.team?.displayName || loser.team?.shortDisplayName || '').toLowerCase();
+          const team = S.teams.find(t => {
+            const tn = t.name.toLowerCase();
+            return tn === loserName || loserName.includes(tn) || tn.includes(loserName) ||
+              tn.split(' ').some(w => w.length > 3 && loserName.includes(w));
+          });
+          if(team && !team.eliminated){
+            team.eliminated = true;
+            S.players.filter(p => p.teamId === team.id).forEach(p => p.eliminated = true);
+            anyChange = true;
+            console.log(`Eliminated: ${team.name}`);
           }
         }
       }
@@ -2290,10 +2286,12 @@ async function fetchLiveStats(){
       _lastStatsUpdate = Date.now();
       save();
       rerenderAll();
-      toast('📊 Stats updated','ok');
+      toast('📊 Live stats updated','ok');
+    } else {
+      console.log('Live stats: no changes');
     }
   } catch(e){
-    console.warn('Live stats fetch failed:', e);
+    console.warn('Live stats error:', e);
   }
 }
 
