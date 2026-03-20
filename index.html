@@ -2191,18 +2191,17 @@ function matchPlayer(espnName){
 }
 
 async function debugLiveStats(){
-  const log = [];
-  const origWarn = console.warn;
-  const origLog = console.log;
-  console.log = (...a) => { log.push(a.join(' ')); origLog(...a); };
-  console.warn = (...a) => { log.push('WARN: '+a.join(' ')); origWarn(...a); };
+  toast('Fetching...','ok');
+  const espnNames = [];
+  const realMatch = matchPlayer;
+  window.matchPlayer = function(n){ espnNames.push(n); return realMatch(n); };
   _debugStats = true;
-  toast('Fetching…','ok');
   await fetchLiveStats();
   _debugStats = false;
-  console.log = origLog;
-  console.warn = origWarn;
-  alert(log.length ? log.join('\n') : 'No logs — fetch may have failed silently');
+  window.matchPlayer = realMatch;
+  const yamsNames = S.players.filter(p=>p.draftedBy).map(p=>p.name).slice(0,20);
+  const msg = 'ESPN names (' + espnNames.length + ' total):\n' + espnNames.slice(0,25).join('\n') + '\n\n---YAMS drafted---\n' + yamsNames.join('\n');
+  alert(msg);
 }
 
 let _debugStats = false;
@@ -2212,7 +2211,6 @@ async function fetchLiveStats(){
     const pad = n => String(n).padStart(2,'0');
     const dateStr = `${today.getFullYear()}${pad(today.getMonth()+1)}${pad(today.getDate())}`;
 
-    // Try both groups=100 (tournament) and no group filter
     let events = [];
     for(const url of [
       `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=100&limit=50&dates=${dateStr}`,
@@ -2237,18 +2235,20 @@ async function fetchLiveStats(){
 
       const gameId = event.id;
       const teams = event.competitions?.[0]?.competitors?.map(c=>c.team?.displayName)||[];
-      console.log(`YAMS: Processing game ${gameId}: ${teams.join(' vs ')} [${status}]`);
+      console.log(`YAMS: Game ${gameId}: ${teams.join(' vs ')} [${status}]`);
 
       let boxData;
       try {
         const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/summary?event=${gameId}`);
-        if(!r.ok){ console.log('YAMS: box score fetch failed', r.status); continue; }
+        if(!r.ok) continue;
         boxData = await r.json();
-      } catch(e){ console.log('YAMS: box score error', e); continue; }
+      } catch(e){ continue; }
 
+      // ESPN box score has two possible structures:
+      // 1. boxscore.players[].statistics[0].athletes[] (older)
+      // 2. boxscore.players[].statistics[0].starters[] + .bench[] (newer)
       const playerGroups = boxData.boxscore?.players || [];
-      if(!playerGroups.length){ console.log('YAMS: no player data for game', gameId); continue; }
-
+      
       for(const teamBlock of playerGroups){
         const statGroups = teamBlock.statistics || [];
         const statBlock = statGroups[0];
@@ -2258,10 +2258,18 @@ async function fetchLiveStats(){
         const ptsIdx = labels.indexOf('PTS');
         const rebIdx = labels.indexOf('REB');
         const astIdx = labels.indexOf('AST');
-        if(ptsIdx<0||rebIdx<0||astIdx<0){ console.log('YAMS: missing stat labels', labels); continue; }
+        if(ptsIdx<0||rebIdx<0||astIdx<0) continue;
 
-        for(const athlete of (statBlock.athletes||[])){
-          const espnName = athlete.athlete?.displayName || '';
+        // Collect all athletes from whichever structure ESPN uses
+        const allAthletes = [
+          ...(statBlock.athletes || []),
+          ...(statBlock.starters || []),
+          ...(statBlock.bench || [])
+        ];
+
+        for(const athlete of allAthletes){
+          const espnName = athlete.athlete?.displayName || athlete.displayName || '';
+          if(!espnName) continue;
           const stats = athlete.stats || [];
           if(!stats.length || stats[0]==='--') continue;
 
@@ -2270,10 +2278,13 @@ async function fetchLiveStats(){
           const ast = parseFloat(stats[astIdx])||0;
 
           const p = matchPlayer(espnName);
-          if(!p){ continue; }
+          if(!p){
+            if(_debugStats) console.log(`YAMS no match: "${espnName}"`);
+            continue;
+          }
 
           if(p.ts.pts!==pts||p.ts.reb!==reb||p.ts.ast!==ast){
-            console.log(`YAMS: Updated ${p.name} (ESPN: ${espnName}): ${pts}/${reb}/${ast}`);
+            console.log(`YAMS: Updated ${p.name}: ${pts}/${reb}/${ast}`);
             p.ts.pts=pts; p.ts.reb=reb; p.ts.ast=ast;
             anyChange=true;
           }
@@ -2306,7 +2317,7 @@ async function fetchLiveStats(){
       save(); rerenderAll();
       toast('📊 Live stats updated','ok');
     } else {
-      console.log('YAMS: No stat changes found');
+      console.log('YAMS: No stat changes');
     }
   } catch(e){
     console.warn('YAMS live stats error:', e);
