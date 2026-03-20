@@ -566,6 +566,8 @@ select.input{cursor:pointer;}
       <div class="card card-sm">
         <p style="font-size:13px;color:var(--t2);margin-bottom:12px;line-height:1.6;">Paste the full bracket list to auto-populate all teams and players at once. Use the format Claude gives you on March 16.</p>
         <button class="btn sm" onclick="openM('bulkImport')">📋 Import Bracket</button>
+        <button class="btn sm" style="margin-top:8px;" onclick="fetchLiveStats();toast('Fetching live stats…','ok')">📡 Refresh Live Stats</button>
+        <button class="btn sm danger" style="margin-top:8px;" onclick="clearAllPlayers()">🗑 Clear All Players</button>
       </div>
     </div>
 
@@ -1209,7 +1211,7 @@ function renderDraft(){
     const c=S.contestants.find(c=>c.id===p.draftedBy);
     const ci=S.contestants.indexOf(c);
     const drafted=!!p.draftedBy;
-    const myTurn=S.draft.active&&myContestantId&&(S.draft.order[S.draft.currentIdx%S.draft.order.length]===myContestantId);
+    const myTurn=S.draft.active&&myContestantId&&(snakePicker(S.draft.currentIdx,S.draft.order)===myContestantId);
     const clickable=!drafted&&S.draft.active&&(role==='admin'||myTurn);
     const waitingContestant=!drafted&&S.draft.active&&role!=='admin'&&myContestantId&&!myTurn;
     return `<div class="player-card ${drafted?'drafted':''}" ${clickable?`onclick="openPickSheet('${p.id}')"`:''} style="${waitingContestant?'opacity:0.55;cursor:not-allowed;':''}">
@@ -1238,13 +1240,13 @@ function updateDraftBanner(){
   if(!S.draft.active){ banner.classList.remove('active'); return; }
   banner.classList.add('active');
   const ord=S.draft.order; if(!ord.length) return;
-  const idx=S.draft.currentIdx%ord.length;
-  const c=S.contestants.find(c=>c.id===ord[idx]);
+  const c=S.contestants.find(c=>c.id===snakePicker(S.draft.currentIdx,ord));
   const round=Math.floor(S.draft.currentIdx/ord.length)+1;
-  const isMyTurn=myContestantId&&ord[idx]===myContestantId;
+  const isMyTurn=myContestantId&&snakePicker(S.draft.currentIdx,ord)===myContestantId;
   banner.classList.toggle('my-turn', !!isMyTurn);
-  document.getElementById('draftBannerPicker').textContent=isMyTurn?'🟢 Your turn!':c?.name||'—';
-  document.getElementById('draftBannerSub').textContent=isMyTurn?`Round ${round} · Pick ${S.draft.currentIdx+1} — tap a player to draft`:`Round ${round} · Pick ${S.draft.currentIdx+1}${role!=='admin'?' · Waiting for '+c?.name:''}`;
+  const cName=c?.name||'(loading...)';
+  document.getElementById('draftBannerPicker').textContent=isMyTurn?'🟢 Your turn!':cName+' is picking';
+  document.getElementById('draftBannerSub').textContent=isMyTurn?`Round ${round} · Pick ${S.draft.currentIdx+1} — tap a player to draft`:`Round ${round} · Pick ${S.draft.currentIdx+1} · Waiting for ${cName}`;
 }
 
 // ════════════════════════════════════════════════
@@ -1256,7 +1258,7 @@ function openPickSheet(playerId){
   const t=S.teams.find(t=>t.id===p.teamId);
   document.getElementById('pickInfo').innerHTML=`<div class="pick-player-name">${p.name}</div><div class="pick-details">${t?.name} · Seed ${t?.seed} · ${t?.region} | ${(p.pts+p.reb+p.ast).toFixed(1)} avg</div>`;
   const sel=document.getElementById('pickContestant');
-  const myTurnId=S.draft.active?S.draft.order[S.draft.currentIdx%S.draft.order.length]:'';
+  const myTurnId=S.draft.active?snakePicker(S.draft.currentIdx,S.draft.order):'';
   // Contestant self-serve: hide dropdown, auto-select themselves
   if(role!=='admin'&&myContestantId){
     document.getElementById('pickSheetTitle').textContent='Your Pick 🏀';
@@ -1317,10 +1319,8 @@ function confirmPick(){
   if(c.players.some(pid=>{ const pl=S.players.find(p=>p.id===pid); return pl&&pl.teamId===p.teamId; })){ toast('Already has player from '+t.name,'err'); return; }
   p.draftedBy=cId; c.players.push(p.id);
   if(S.draft.active){
-    if(cId===S.draft.order[S.draft.currentIdx%S.draft.order.length]){
-      S.draft.currentIdx++;
-      if(S.draft.currentIdx>=S.contestants.length*7){ S.draft.active=false; setTimeout(()=>toast('🎉 Draft Complete!','ok'),400); }
-    }
+    S.draft.currentIdx++;
+    if(S.draft.currentIdx>=S.contestants.length*7){ S.draft.active=false; setTimeout(()=>toast('🎉 Draft Complete!','ok'),400); }
   }
   save(); closeSheet(); renderDraft(); renderLB();
   toast(`${p.name} → ${c.name} 🏀`,'ok');
@@ -1333,7 +1333,7 @@ function calcScore(c){
   if(META.playInActive) return 0;
   return c.players.reduce((t,pid)=>{
     const p=S.players.find(pl=>pl.id===pid);
-    if(!p||p.eliminated) return t;
+    if(!p) return t;
     return t+(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
   },0);
 }
@@ -1389,7 +1389,7 @@ function renderRoster(cId){
   const rows=c.players.map(pid=>{
     const p=S.players.find(pl=>pl.id===pid); const t=p?S.teams.find(t=>t.id===p.teamId):null;
     if(!p||!t) return '';
-    const score=(p.eliminated||META.playInActive)?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
+    const score=META.playInActive?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
     return `<div class="roster-row ${p.eliminated?'out':''}">
       <div class="roster-player"><div class="roster-pname">${p.name}</div><div class="roster-team">${t.name} · ${t.seed}-seed${p.eliminated?' · ELIM':''}</div></div>
       <div class="roster-stats">${score.toFixed(1)}<small>${p.ts.pts}/${p.ts.reb}/${p.ts.ast}</small></div>
@@ -1647,7 +1647,7 @@ function renderSetup(){
     const order=S.draft.order.length?S.draft.order:S.contestants.map(c=>c.id);
     ol.innerHTML=order.map((cid,i)=>{
       const c=S.contestants.find(c=>c.id===cid); if(!c) return '';
-      const isCurrent=S.draft.active&&(i===(S.draft.currentIdx%S.contestants.length));
+      const isCurrent=S.draft.active&&(snakePicker(S.draft.currentIdx,order)===cid);
       return `<div class="order-item" draggable="true" data-id="${cid}" 
         ondragstart="dragStart(event)" ondragover="dragOver(event)" ondrop="dragDrop(event)" ondragend="dragEnd(event)">
         <div class="drag-handle">☰</div>
@@ -1707,13 +1707,21 @@ function dragEnd(e){
   document.querySelectorAll('.order-item').forEach(el=>{ el.classList.remove('dragging'); el.classList.remove('drag-over'); });
 }
 
+function snakePicker(idx, order){
+  if(!order||!order.length) return null;
+  const n=order.length;
+  const round=Math.floor(idx/n);
+  const pos=idx%n;
+  return order[round%2===0 ? pos : (n-1-pos)];
+}
+
 function toggleDraft(){
   if(S.draft.active){ if(!confirm('Pause the draft?')) return; S.draft.active=false; toast('Draft paused','ok'); }
   else{
     if(!S.contestants.length){ toast('Add contestants first','err'); return; }
-    S.draft.active=true; S.draft.currentIdx=0;
-    if(!S.draft.order.length) S.draft.order=S.contestants.map(c=>c.id);
-    toast('Draft started! 🎯','ok');
+    S.draft.active=true;
+    if(!S.draft.order.length){ S.draft.order=S.contestants.map(c=>c.id); S.draft.currentIdx=0; }
+    toast(S.draft.currentIdx>0?'Draft resumed ▶':'Draft started! 🎯','ok');
   }
   save(); renderSetup(); renderDraft();
 }
@@ -1979,7 +1987,7 @@ function renderMyTeam(){
   const rosterHtml=c.players.map(pid=>{
     const p=S.players.find(pl=>pl.id===pid); const t=p?S.teams.find(t=>t.id===p.teamId):null;
     if(!p||!t) return '';
-    const sc=(p.eliminated||META.playInActive)?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
+    const sc=META.playInActive?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
     return `<div class="mt-player-row ${p.eliminated?'elim':''}">
       <div style="flex:1;">
         <div class="mt-pname">${p.name}</div>
@@ -2128,6 +2136,15 @@ function confirmImport(){
   toast(`✅ ${teamsAdded} teams · ${playersAdded} players imported${skipped?' ('+skipped+' skipped)':''}`, 'ok');
 }
 
+function clearAllPlayers(){
+  if(!confirm('Clear ALL players and teams? This will also remove players from contestant rosters. Cannot be undone.')) return;
+  S.players=[];
+  S.teams=[];
+  S.contestants.forEach(c=>{ c.players=[]; c.tradeHistory=c.tradeHistory||[]; });
+  save(); renderSetup(); renderDraft(); renderLB();
+  toast('🗑 All players and teams cleared','ok');
+}
+
 // ════════════════════════════════════════════════
 // UTILS
 // ════════════════════════════════════════════════
@@ -2141,6 +2158,149 @@ function toast(msg,type='ok'){
 // ════════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════
+// LIVE STATS SYNC (ESPN API)
+// ════════════════════════════════════════════════
+
+let _liveStatsInterval = null;
+let _lastStatsUpdate = 0;
+
+function normalizeName(n){
+  return n.normalize('NFD')          // decompose accented chars (ć → c + combining)
+    .replace(/[\u0300-\u036f]/g,'') // strip combining diacritics
+    .toLowerCase()
+    .replace(/[^a-z ]/g,'')
+    .replace(/\bjr\b|\bsr\b|\biii\b|\bii\b|\biv\b/g,'')
+    .replace(/\s+/g,' ').trim();
+}
+
+function matchPlayer(espnName){
+  const norm = normalizeName(espnName);
+  // Exact match first
+  let p = S.players.find(pl => normalizeName(pl.name) === norm);
+  if(p) return p;
+  // Last name match within same team context
+  const parts = norm.split(' ');
+  const last = parts[parts.length-1];
+  const candidates = S.players.filter(pl => normalizeName(pl.name).endsWith(last));
+  if(candidates.length === 1) return candidates[0];
+  return null;
+}
+
+async function fetchLiveStats(){
+  try {
+    const today = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    const dateStr = `${today.getFullYear()}${pad(today.getMonth()+1)}${pad(today.getDate())}`;
+
+    // Try both groups=100 (tournament) and no group filter
+    let events = [];
+    for(const url of [
+      `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=100&limit=50&dates=${dateStr}`,
+      `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?limit=50&dates=${dateStr}`
+    ]){
+      try {
+        const r = await fetch(url);
+        if(!r.ok) continue;
+        const d = await r.json();
+        if(d.events?.length){ events = d.events; break; }
+      } catch(e){ continue; }
+    }
+
+    if(!events.length){ console.log('YAMS: No games found for', dateStr); return; }
+    console.log(`YAMS: Found ${events.length} games`);
+
+    let anyChange = false;
+
+    for(const event of events){
+      const status = event.status?.type?.name;
+      if(status !== 'STATUS_IN_PROGRESS' && status !== 'STATUS_FINAL') continue;
+
+      const gameId = event.id;
+      const teams = event.competitions?.[0]?.competitors?.map(c=>c.team?.displayName)||[];
+      console.log(`YAMS: Processing game ${gameId}: ${teams.join(' vs ')} [${status}]`);
+
+      let boxData;
+      try {
+        const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/summary?event=${gameId}`);
+        if(!r.ok){ console.log('YAMS: box score fetch failed', r.status); continue; }
+        boxData = await r.json();
+      } catch(e){ console.log('YAMS: box score error', e); continue; }
+
+      const playerGroups = boxData.boxscore?.players || [];
+      if(!playerGroups.length){ console.log('YAMS: no player data for game', gameId); continue; }
+
+      for(const teamBlock of playerGroups){
+        const statGroups = teamBlock.statistics || [];
+        const statBlock = statGroups[0];
+        if(!statBlock) continue;
+
+        const labels = statBlock.labels || [];
+        const ptsIdx = labels.indexOf('PTS');
+        const rebIdx = labels.indexOf('REB');
+        const astIdx = labels.indexOf('AST');
+        if(ptsIdx<0||rebIdx<0||astIdx<0){ console.log('YAMS: missing stat labels', labels); continue; }
+
+        for(const athlete of (statBlock.athletes||[])){
+          const espnName = athlete.athlete?.displayName || '';
+          const stats = athlete.stats || [];
+          if(!stats.length || stats[0]==='--') continue;
+
+          const pts = parseFloat(stats[ptsIdx])||0;
+          const reb = parseFloat(stats[rebIdx])||0;
+          const ast = parseFloat(stats[astIdx])||0;
+
+          const p = matchPlayer(espnName);
+          if(!p){ continue; }
+
+          if(p.ts.pts!==pts||p.ts.reb!==reb||p.ts.ast!==ast){
+            console.log(`YAMS: Updated ${p.name} (ESPN: ${espnName}): ${pts}/${reb}/${ast}`);
+            p.ts.pts=pts; p.ts.reb=reb; p.ts.ast=ast;
+            anyChange=true;
+          }
+        }
+      }
+
+      // Auto-eliminate losing team on final
+      if(status==='STATUS_FINAL'){
+        const competitors = event.competitions?.[0]?.competitors||[];
+        const loser = competitors.find(c=>c.winner===false);
+        if(loser){
+          const loserName=(loser.team?.displayName||loser.team?.shortDisplayName||'').toLowerCase();
+          const team=S.teams.find(t=>{
+            const tn=t.name.toLowerCase();
+            return tn===loserName||loserName.includes(tn)||tn.includes(loserName)||
+              tn.split(' ').some(w=>w.length>3&&loserName.includes(w));
+          });
+          if(team&&!team.eliminated){
+            team.eliminated=true;
+            S.players.filter(p=>p.teamId===team.id).forEach(p=>p.eliminated=true);
+            anyChange=true;
+            console.log(`YAMS: Eliminated ${team.name}`);
+          }
+        }
+      }
+    }
+
+    if(anyChange){
+      _lastStatsUpdate=Date.now();
+      save(); rerenderAll();
+      toast('📊 Live stats updated','ok');
+    } else {
+      console.log('YAMS: No stat changes found');
+    }
+  } catch(e){
+    console.warn('YAMS live stats error:', e);
+  }
+}
+
+function startLiveStats(){
+  fetchLiveStats(); // immediate first run
+  if(_liveStatsInterval) clearInterval(_liveStatsInterval);
+  _liveStatsInterval = setInterval(fetchLiveStats, 3 * 60 * 1000); // every 3 min
+}
+
 async function init(){
   document.getElementById('splashYear').textContent=new Date().getFullYear()+' SEASON';
   // Show loading state on login button while we pull remote state
@@ -2153,7 +2313,7 @@ async function init(){
   document.getElementById('splashYear').textContent=(META.year||new Date().getFullYear())+' SEASON';
   // Show past seasons if any
   startRealtime();
-  // Show past seasons if any
+  startLiveStats();
   renderSplashPastSeasons();
 }
 
