@@ -2208,21 +2208,30 @@ let _debugStats = false;
 async function fetchLiveStats(){
   try {
     const today = new Date();
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate()-1);
     const pad = n => String(n).padStart(2,'0');
-    const dateStr = `${today.getFullYear()}${pad(today.getMonth()+1)}${pad(today.getDate())}`;
+    const fmt = d => `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
+    const dateStr = fmt(today);
+    const yestStr = fmt(yesterday);
 
+    // Fetch both today and yesterday to catch games that ran past midnight
+    // (no team plays on consecutive days so no risk of double-counting)
     let events = [];
-    for(const url of [
-      `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=100&limit=50&dates=${dateStr}`,
-      `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?limit=50&dates=${dateStr}`
-    ]){
-      try {
-        const r = await fetch(url);
-        if(!r.ok) continue;
-        const d = await r.json();
-        if(d.events?.length){ events = d.events; break; }
-      } catch(e){ continue; }
+    for(const ds of [dateStr, yestStr]){
+      for(const url of [
+        `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=100&limit=50&dates=${ds}`,
+        `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?limit=50&dates=${ds}`
+      ]){
+        try {
+          const r = await fetch(url);
+          if(!r.ok) continue;
+          const d = await r.json();
+          if(d.events?.length){ events = [...events, ...d.events]; break; }
+        } catch(e){ continue; }
+      }
     }
+    // Deduplicate by game ID
+    events = [...new Map(events.map(e=>[e.id,e])).values()];
 
     if(!events.length){ console.log('YAMS: No games found for', dateStr); return; }
     console.log(`YAMS: Found ${events.length} games`);
