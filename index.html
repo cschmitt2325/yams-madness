@@ -566,7 +566,7 @@ select.input{cursor:pointer;}
       <div class="card card-sm">
         <p style="font-size:13px;color:var(--t2);margin-bottom:12px;line-height:1.6;">Paste the full bracket list to auto-populate all teams and players at once. Use the format Claude gives you on March 16.</p>
         <button class="btn sm" onclick="openM('bulkImport')">📋 Import Bracket</button>
-        <button class="btn sm" style="margin-top:8px;" onclick="fetchLiveStats();toast('Fetching live stats…','ok')">📡 Refresh Live Stats</button>
+        <button class="btn sm" style="margin-top:8px;" onclick="debugLiveStats()">📡 Refresh Live Stats</button>
         <button class="btn sm danger" style="margin-top:8px;" onclick="clearAllPlayers()">🗑 Clear All Players</button>
       </div>
     </div>
@@ -2186,6 +2186,19 @@ function matchPlayer(espnName){
   const candidates = S.players.filter(pl => normalizeName(pl.name).endsWith(last));
   if(candidates.length === 1) return candidates[0];
   return null;
+}
+
+async function debugLiveStats(){
+  const log = [];
+  const origWarn = console.warn;
+  const origLog = console.log;
+  console.log = (...a) => { log.push(a.join(' ')); origLog(...a); };
+  console.warn = (...a) => { log.push('WARN: '+a.join(' ')); origWarn(...a); };
+  toast('Fetching…','ok');
+  await fetchLiveStats();
+  console.log = origLog;
+  console.warn = origWarn;
+  alert(log.length ? log.join('\n') : 'No logs — fetch may have failed silently');
 }
 
 async function fetchLiveStats(){
