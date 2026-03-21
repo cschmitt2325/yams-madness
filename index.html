@@ -1714,6 +1714,41 @@ function selectTradePlayer(type, id, name, team, seed){
   listEl.style.display='none';
 }
 
+function undoTrade(cId, trIdx){
+  const c=S.contestants.find(c=>c.id===cId);
+  if(!c) return;
+  const tr=c.tradeHistory[trIdx];
+  if(!tr){ toast('Trade not found','err'); return; }
+  if(!confirm('Undo trade: '+
+    (S.players.find(p=>p.id===tr.dropId)?.name||'?')+' → '+
+    (S.players.find(p=>p.id===tr.pickId)?.name||'?')+'?')) return;
+
+  const drop=S.players.find(p=>p.id===tr.dropId);
+  const pick=S.players.find(p=>p.id===tr.pickId);
+
+  // Remove picked player from roster, add dropped player back
+  c.players=c.players.filter(id=>id!==tr.pickId);
+  if(drop&&!c.players.includes(tr.dropId)) c.players.push(tr.dropId);
+
+  // Restore draftedBy
+  if(drop) drop.draftedBy=cId;
+  if(pick) pick.draftedBy=null;
+
+  // Restore trade slot
+  if(!c.trades.s19) c.trades.s19=true;
+  else c.trades.s10=true;
+
+  // Remove trade from history
+  c.tradeHistory.splice(trIdx,1);
+
+  // Clear baseline for picked player
+  if(META.tradeBaselines) delete META.tradeBaselines[tr.pickId];
+
+  save(); renderLB(); renderTrades();
+  if(myContestantId===cId) renderMyTeam();
+  toast('Trade reverted','ok');
+}
+
 function setTradeBaseline(cId, pickId){
   const p=S.players.find(pl=>pl.id===pickId);
   if(!p) return;
@@ -2188,8 +2223,12 @@ function renderMyTeam(){
     const picked=S.players.find(p=>p.id===tr.pickId);
     const dTeam=dropped?S.teams.find(t=>t.id===dropped.teamId):null;
     const pTeam=picked?S.teams.find(t=>t.id===picked.teamId):null;
+    const trIdx=(c.tradeHistory||[]).indexOf(tr);
     return `<div class="trade-history-item">
-      <div class="th-label">${tr.round||'Trade'} · ${tr.ts?new Date(tr.ts).toLocaleDateString():'—'}</div>
+      <div class="th-label" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>${tr.round||'Trade'} · ${tr.ts?new Date(tr.ts).toLocaleDateString():'—'}</span>
+        ${role==='admin'?`<button class="btn xs danger" onclick="undoTrade('${c.id}',${trIdx});event.stopPropagation()" style="padding:3px 8px;font-size:11px;">↩ Undo</button>`:''}
+      </div>
       <div class="th-trade">
         <span class="th-drop">▼ ${dropped?.name||'Unknown'}${dTeam?' ('+dTeam.name+')':''}</span>
         <span class="th-arrow">→</span>
@@ -2475,20 +2514,26 @@ async function fetchLiveStats(){
             continue;
           }
 
-          if(p.ts.pts!==pts||p.ts.reb!==reb||p.ts.ast!==ast){
-            // If this player was traded in and has no baseline yet, set it NOW
-            // before overwriting ts — this captures their pre-trade stats
-            // Auto-set baseline for traded-in players with no baseline yet
+          // Store stats per game ID so ts accumulates across all tournament games
+          if(!p.gameStats) p.gameStats={};
+          const prevGame = p.gameStats[gameId]||{pts:0,reb:0,ast:0};
+          if(prevGame.pts!==pts||prevGame.reb!==reb||prevGame.ast!==ast){
+            p.gameStats[gameId]={pts,reb,ast};
+            // Sum all games to get cumulative ts
+            const newPts=Object.values(p.gameStats).reduce((s,g)=>s+g.pts,0);
+            const newReb=Object.values(p.gameStats).reduce((s,g)=>s+g.reb,0);
+            const newAst=Object.values(p.gameStats).reduce((s,g)=>s+g.ast,0);
+            // Auto-set baseline for traded-in players before first update
             if(!META.tradeBaselines) META.tradeBaselines={};
             S.contestants.forEach(c=>{
               const tr=(c.tradeHistory||[]).find(t=>t.pickId===p.id);
               if(tr&&!META.tradeBaselines[p.id]){
-                META.tradeBaselines[p.id]={pts:p.ts.pts, reb:p.ts.reb, ast:p.ts.ast};
+                META.tradeBaselines[p.id]={pts:p.ts.pts,reb:p.ts.reb,ast:p.ts.ast};
                 console.log(`YAMS: Auto-baseline ${p.name}: ${p.ts.pts}/${p.ts.reb}/${p.ts.ast}`);
               }
             });
-            console.log(`YAMS: Updated ${p.name}: ${pts}/${reb}/${ast}`);
-            p.ts.pts=pts; p.ts.reb=reb; p.ts.ast=ast;
+            console.log(`YAMS: Updated ${p.name}: ${newPts}/${newReb}/${newAst} (game ${gameId}: ${pts}/${reb}/${ast})`);
+            p.ts.pts=newPts; p.ts.reb=newReb; p.ts.ast=newAst;
             anyChange=true;
           }
         }
