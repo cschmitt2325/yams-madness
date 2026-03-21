@@ -1345,22 +1345,31 @@ function confirmPick(){
 // LEADERBOARD
 // ════════════════════════════════════════════════
 function playerScore(p, baseOverride){
-  // Score = all snapshotted rounds + current live ts
-  // ts is always just the current game from ESPN (never cumulative)
-  // No subtraction needed - snapshots cover past rounds, ts covers current game
+  // Score = all snapshotted rounds + current round ts
+  // Key insight: ts from ESPN is CUMULATIVE for the current game
+  // Snapshot stores end-of-round stats
+  // So for current round: player score = ts (which is their running total this game)
+  // For past rounds: use snapshots
+  // To avoid double counting: only add ts if it exceeds snapshot total
   const snaps=META.roundSnapshots||{};
   const currentRound=currentRoundName();
-  let pts=0, reb=0, ast=0;
+  let snapPts=0, snapReb=0, snapAst=0;
 
-  // Add all snapshotted rounds
+  // Sum all snapshotted rounds
   Object.entries(snaps).forEach(([round, snap])=>{
-    if(snap[p.id]){ pts+=snap[p.id].pts; reb+=snap[p.id].reb; ast+=snap[p.id].ast; }
+    if(snap[p.id]){ snapPts+=snap[p.id].pts; snapReb+=snap[p.id].reb; snapAst+=snap[p.id].ast; }
   });
 
-  // Add current round ts directly (only if not yet snapshotted)
-  // ts = current game stats only, ESPN overwrites each fetch
+  let pts=snapPts, reb=snapReb, ast=snapAst;
+
+  // Add current round: only the portion of ts ABOVE what snapshots already captured
+  // This handles: players who haven't played yet (ts=0, adds 0)
+  // Players whose R1 game ran past midnight (ts=R1 stats = same as snapshot, adds 0)
+  // Players actively playing R2 (ts=R2 stats > snapshot, adds the difference)
   if(!snaps[currentRound]){
-    pts+=p.ts.pts; reb+=p.ts.reb; ast+=p.ts.ast;
+    pts+=Math.max(0, p.ts.pts - snapPts);
+    reb+=Math.max(0, p.ts.reb - snapReb);
+    ast+=Math.max(0, p.ts.ast - snapAst);
   }
 
   // Subtract trade baseline
