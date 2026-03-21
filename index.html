@@ -1345,32 +1345,33 @@ function confirmPick(){
 // LEADERBOARD
 // ════════════════════════════════════════════════
 function playerScore(p, baseOverride){
-  // Sum all snapshotted rounds + current round live ts
+  // Score = R1 snapshot + R2 game stats only
+  // R1 game IDs are stored in META.r1GameIds to avoid double counting
   const snaps=META.roundSnapshots||{};
-  const currentRound=currentRoundName();
+  const r1Ids=new Set(META.r1GameIds||[]);
   let pts=0, reb=0, ast=0;
 
-  // Add each snapshotted round
+  // Add each snapshotted round (R1 etc)
   Object.entries(snaps).forEach(([round, snap])=>{
     if(snap[p.id]){ pts+=snap[p.id].pts; reb+=snap[p.id].reb; ast+=snap[p.id].ast; }
   });
 
-  // Add current round live ts ONLY if:
-  // 1. Current round not yet snapshotted AND
-  // 2. Player has gameStats entries NOT already in any snapshot
-  //    (i.e. they actually played a new game this round)
-  if(!snaps[currentRound]){
-    // Check if gameStats has any entries beyond what the snapshots cover
-    // by seeing if ts differs from what snapshots already account for
+  // Add only NEW round games (not R1 games, not R1_snap)
+  Object.entries(p.gameStats||{}).forEach(([gid, g])=>{
+    if(gid!=='R1_snap' && !r1Ids.has(gid)){
+      pts+=g.pts; reb+=g.reb; ast+=g.ast;
+    }
+  });
+
+  // If no gameStats entries for new rounds, use ts only if it exceeds snapshot total
+  // (for players whose live game hasn't been stored in gameStats yet)
+  const hasNewGame=Object.keys(p.gameStats||{}).some(gid=>gid!=='R1_snap'&&!r1Ids.has(gid));
+  if(!hasNewGame && !snaps[currentRoundName()]){
     const snapTotal={pts:0,reb:0,ast:0};
-    Object.entries(snaps).forEach(([round,snap])=>{
-      if(snap[p.id]){ snapTotal.pts+=snap[p.id].pts; snapTotal.reb+=snap[p.id].reb; snapTotal.ast+=snap[p.id].ast; }
-    });
-    // Only add ts if it's more than what snapshots already captured
-    const extraPts=Math.max(0,p.ts.pts-snapTotal.pts);
-    const extraReb=Math.max(0,p.ts.reb-snapTotal.reb);
-    const extraAst=Math.max(0,p.ts.ast-snapTotal.ast);
-    pts+=extraPts; reb+=extraReb; ast+=extraAst;
+    Object.entries(snaps).forEach(([r,s])=>{ if(s[p.id]){ snapTotal.pts+=s[p.id].pts; snapTotal.reb+=s[p.id].reb; snapTotal.ast+=s[p.id].ast; }});
+    pts+=Math.max(0,p.ts.pts-snapTotal.pts);
+    reb+=Math.max(0,p.ts.reb-snapTotal.reb);
+    ast+=Math.max(0,p.ts.ast-snapTotal.ast);
   }
 
   // Subtract trade baseline
