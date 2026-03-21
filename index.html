@@ -2055,14 +2055,46 @@ function renderMyTeam(){
     </div>`;
   }).join('');
 
-  // Active roster
+  // Build roster: show traded-away players (frozen stats) + current players
+  const tradedAwayIds = new Set((c.tradeHistory||[]).map(tr=>tr.dropId));
+  const tradedInIds   = new Set((c.tradeHistory||[]).map(tr=>tr.pickId));
+
+  // Traded-away players - show with frozen R1 stats
+  const tradedAwayHtml=(c.tradeHistory||[]).map(tr=>{
+    const p=S.players.find(pl=>pl.id===tr.dropId);
+    const t=p?S.teams.find(tm=>tm.id===p.teamId):null;
+    if(!p||!t) return '';
+    // Use snapshot from the round they were traded away if available
+    const snapRound=tr.round||'R1';
+    const snaps=META.roundSnapshots||{};
+    let sc=0;
+    if(snaps[snapRound]&&snaps[snapRound][p.id]){
+      const ps=snaps[snapRound][p.id];
+      sc=(ps.pts*S.weights.pts)+(ps.reb*S.weights.reb)+(ps.ast*S.weights.ast);
+    } else {
+      sc=(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
+    }
+    const picked=S.players.find(pl=>pl.id===tr.pickId);
+    return `<div class="mt-player-row elim" style="opacity:0.6;border-left:3px solid var(--t3);">
+      <div style="flex:1;">
+        <div class="mt-pname" style="text-decoration:line-through;">${p.name}</div>
+        <div class="mt-pteam">${t.name} · Seed ${t.seed} · <span style="color:var(--t3);">TRADED → ${picked?.name||''}</span></div>
+      </div>
+      <div style="text-align:right;">
+        <div class="mt-pscore" style="font-size:14px;">${sc.toFixed(1)}<small>${p.ts.pts}/${p.ts.reb}/${p.ts.ast}</small></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Current roster players
   const rosterHtml=c.players.map(pid=>{
     const p=S.players.find(pl=>pl.id===pid); const t=p?S.teams.find(t=>t.id===p.teamId):null;
     if(!p||!t) return '';
     const sc=META.playInActive?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
-    return `<div class="mt-player-row ${p.eliminated?'elim':''}">
+    const isTradeIn=tradedInIds.has(pid);
+    return `<div class="mt-player-row ${p.eliminated?'elim':''}" style="${isTradeIn?'border-left:3px solid var(--gold);':''}">
       <div style="flex:1;">
-        <div class="mt-pname">${p.name}</div>
+        <div class="mt-pname">${p.name}${isTradeIn?' <span style="font-size:11px;color:var(--gold);font-weight:700;">TRADED IN</span>':''}</div>
         <div class="mt-pteam">${t.name} · Seed ${t.seed}${p.eliminated?' · <span style="color:var(--red)">ELIMINATED</span>':''}</div>
       </div>
       <div style="text-align:right;">
@@ -2100,6 +2132,7 @@ function renderMyTeam(){
     <div class="round-grid">${roundsHtml}</div>
 
     <div class="mt-section">Roster (${c.players.length}/7)</div>
+    ${tradedAwayHtml}
     ${rosterHtml||'<div style="font-size:13px;color:var(--t3);">No players drafted yet.</div>'}
 
     <div class="mt-section">Trade History</div>
