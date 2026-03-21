@@ -2039,7 +2039,13 @@ function renderMyTeam(){
     if(snaps[r]){
       sc=c.players.reduce((t,pid)=>{ const ps=snaps[r][pid]; return ps?t+(ps.pts*S.weights.pts)+(ps.reb*S.weights.reb)+(ps.ast*S.weights.ast):t; },0);
     } else if(r===currentRoundName()){
-      sc=totalScore; // live
+      // Current round = total score minus all previously snapshotted rounds
+      const prevRounds = ROUNDS.slice(0, ROUNDS.indexOf(r));
+      const prevTotal = prevRounds.reduce((sum, pr) => {
+        if(!snaps[pr]) return sum;
+        return sum + c.players.reduce((t,pid)=>{ const ps=snaps[pr][pid]; return ps?t+(ps.pts*S.weights.pts)+(ps.reb*S.weights.reb)+(ps.ast*S.weights.ast):t; },0);
+      }, 0);
+      sc=totalScore - prevTotal; // live
     }
     const isCurrent=r===currentRoundName();
     return `<div class="round-box" style="${isCurrent?'border-color:rgba(245,166,35,.4);background:rgba(245,166,35,.05);':''}">
