@@ -2536,9 +2536,12 @@ function startLiveStats(){
 function fixMissingBaselines(){
   if(!META.tradeBaselines) META.tradeBaselines={};
   const snaps=META.roundSnapshots||{};
+  console.log('YAMS baselines: snapshots available:', Object.keys(snaps));
+  console.log('YAMS baselines: existing baselines:', JSON.stringify(META.tradeBaselines));
   let fixed=0;
   S.contestants.forEach(c=>{
     (c.tradeHistory||[]).forEach(tr=>{
+      console.log('YAMS: trade found pickId='+tr.pickId+' round='+tr.round+' hasBaseline='+(!!META.tradeBaselines[tr.pickId]));
       if(!META.tradeBaselines[tr.pickId]){
         const p=S.players.find(pl=>pl.id===tr.pickId);
         if(!p) return;
