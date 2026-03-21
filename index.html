@@ -1345,33 +1345,22 @@ function confirmPick(){
 // LEADERBOARD
 // ════════════════════════════════════════════════
 function playerScore(p, baseOverride){
-  // Score = R1 snapshot + R2 game stats only
-  // R1 game IDs are stored in META.r1GameIds to avoid double counting
+  // Score = all snapshotted rounds + current live ts
+  // ts is always just the current game from ESPN (never cumulative)
+  // No subtraction needed - snapshots cover past rounds, ts covers current game
   const snaps=META.roundSnapshots||{};
-  const r1Ids=new Set(META.r1GameIds||[]);
+  const currentRound=currentRoundName();
   let pts=0, reb=0, ast=0;
 
-  // Add each snapshotted round (R1 etc)
+  // Add all snapshotted rounds
   Object.entries(snaps).forEach(([round, snap])=>{
     if(snap[p.id]){ pts+=snap[p.id].pts; reb+=snap[p.id].reb; ast+=snap[p.id].ast; }
   });
 
-  // Add only NEW round games (not R1 games, not R1_snap)
-  Object.entries(p.gameStats||{}).forEach(([gid, g])=>{
-    if(gid!=='R1_snap' && !r1Ids.has(gid)){
-      pts+=g.pts; reb+=g.reb; ast+=g.ast;
-    }
-  });
-
-  // If no gameStats entries for new rounds, use ts only if it exceeds snapshot total
-  // (for players whose live game hasn't been stored in gameStats yet)
-  const hasNewGame=Object.keys(p.gameStats||{}).some(gid=>gid!=='R1_snap'&&!r1Ids.has(gid));
-  if(!hasNewGame && !snaps[currentRoundName()]){
-    const snapTotal={pts:0,reb:0,ast:0};
-    Object.entries(snaps).forEach(([r,s])=>{ if(s[p.id]){ snapTotal.pts+=s[p.id].pts; snapTotal.reb+=s[p.id].reb; snapTotal.ast+=s[p.id].ast; }});
-    pts+=Math.max(0,p.ts.pts-snapTotal.pts);
-    reb+=Math.max(0,p.ts.reb-snapTotal.reb);
-    ast+=Math.max(0,p.ts.ast-snapTotal.ast);
+  // Add current round ts directly (only if not yet snapshotted)
+  // ts = current game stats only, ESPN overwrites each fetch
+  if(!snaps[currentRound]){
+    pts+=p.ts.pts; reb+=p.ts.reb; ast+=p.ts.ast;
   }
 
   // Subtract trade baseline
@@ -2528,26 +2517,19 @@ async function fetchLiveStats(){
             continue;
           }
 
-          // Store stats per game ID so ts accumulates across all tournament games
-          if(!p.gameStats) p.gameStats={};
-          const prevGame = p.gameStats[gameId]||{pts:0,reb:0,ast:0};
-          if(prevGame.pts!==pts||prevGame.reb!==reb||prevGame.ast!==ast){
-            p.gameStats[gameId]={pts,reb,ast};
-            // Sum all games to get cumulative ts
-            const newPts=Object.values(p.gameStats).reduce((s,g)=>s+g.pts,0);
-            const newReb=Object.values(p.gameStats).reduce((s,g)=>s+g.reb,0);
-            const newAst=Object.values(p.gameStats).reduce((s,g)=>s+g.ast,0);
+          // Simply store current game stats in ts (ESPN returns per-game stats)
+          // playerScore() handles accumulation via snapshots + ts delta
+          if(p.ts.pts!==pts||p.ts.reb!==reb||p.ts.ast!==ast){
             // Auto-set baseline for traded-in players before first update
             if(!META.tradeBaselines) META.tradeBaselines={};
             S.contestants.forEach(c=>{
               const tr=(c.tradeHistory||[]).find(t=>t.pickId===p.id);
               if(tr&&!META.tradeBaselines[p.id]){
                 META.tradeBaselines[p.id]={pts:p.ts.pts,reb:p.ts.reb,ast:p.ts.ast};
-                console.log(`YAMS: Auto-baseline ${p.name}: ${p.ts.pts}/${p.ts.reb}/${p.ts.ast}`);
               }
             });
-            console.log(`YAMS: Updated ${p.name}: ${newPts}/${newReb}/${newAst} (game ${gameId}: ${pts}/${reb}/${ast})`);
-            p.ts.pts=newPts; p.ts.reb=newReb; p.ts.ast=newAst;
+            console.log(`YAMS: Updated ${p.name}: ${pts}/${reb}/${ast}`);
+            p.ts.pts=pts; p.ts.reb=reb; p.ts.ast=ast;
             anyChange=true;
           }
         }
