@@ -2526,9 +2526,19 @@ async function fetchLiveStats(){
             continue;
           }
 
-          // Simply store current game stats in ts (ESPN returns per-game stats)
-          // playerScore() handles accumulation via snapshots + ts delta
-          if(p.ts.pts!==pts||p.ts.reb!==reb||p.ts.ast!==ast){
+          // ts = sum(all snapshots) + current_game
+          // playerScore delta = ts - snapshots = current_game only
+          // Works for ALL rounds automatically
+          if(p.eliminated){ continue; } // skip eliminated players
+          const snapsAll=META.roundSnapshots||{};
+          let snapSumPts=0,snapSumReb=0,snapSumAst=0;
+          Object.values(snapsAll).forEach(s=>{
+            if(s[p.id]){ snapSumPts+=s[p.id].pts; snapSumReb+=s[p.id].reb; snapSumAst+=s[p.id].ast; }
+          });
+          const newPts=snapSumPts+pts;
+          const newReb=snapSumReb+reb;
+          const newAst=snapSumAst+ast;
+          if(p.ts.pts!==newPts||p.ts.reb!==newReb||p.ts.ast!==newAst){
             // Auto-set baseline for traded-in players before first update
             if(!META.tradeBaselines) META.tradeBaselines={};
             S.contestants.forEach(c=>{
@@ -2537,8 +2547,8 @@ async function fetchLiveStats(){
                 META.tradeBaselines[p.id]={pts:p.ts.pts,reb:p.ts.reb,ast:p.ts.ast};
               }
             });
-            console.log(`YAMS: Updated ${p.name}: ${pts}/${reb}/${ast}`);
-            p.ts.pts=pts; p.ts.reb=reb; p.ts.ast=ast;
+            console.log(`YAMS: Updated ${p.name}: snapSum=${snapSumPts}/${snapSumReb}/${snapSumAst} + game=${pts}/${reb}/${ast} = ${newPts}/${newReb}/${newAst}`);
+            p.ts.pts=newPts; p.ts.reb=newReb; p.ts.ast=newAst;
             anyChange=true;
           }
         }
