@@ -1345,7 +1345,7 @@ function confirmPick(){
 // LEADERBOARD
 // ════════════════════════════════════════════════
 function playerScore(p, baseOverride){
-  // Sum all snapshotted rounds + current live ts (current round only, not cumulative)
+  // Sum all snapshotted rounds + current round live ts
   const snaps=META.roundSnapshots||{};
   const currentRound=currentRoundName();
   let pts=0, reb=0, ast=0;
@@ -1355,12 +1355,25 @@ function playerScore(p, baseOverride){
     if(snap[p.id]){ pts+=snap[p.id].pts; reb+=snap[p.id].reb; ast+=snap[p.id].ast; }
   });
 
-  // Add current round live stats only if not yet snapshotted
+  // Add current round live ts ONLY if:
+  // 1. Current round not yet snapshotted AND
+  // 2. Player has gameStats entries NOT already in any snapshot
+  //    (i.e. they actually played a new game this round)
   if(!snaps[currentRound]){
-    pts+=p.ts.pts; reb+=p.ts.reb; ast+=p.ts.ast;
+    // Check if gameStats has any entries beyond what the snapshots cover
+    // by seeing if ts differs from what snapshots already account for
+    const snapTotal={pts:0,reb:0,ast:0};
+    Object.entries(snaps).forEach(([round,snap])=>{
+      if(snap[p.id]){ snapTotal.pts+=snap[p.id].pts; snapTotal.reb+=snap[p.id].reb; snapTotal.ast+=snap[p.id].ast; }
+    });
+    // Only add ts if it's more than what snapshots already captured
+    const extraPts=Math.max(0,p.ts.pts-snapTotal.pts);
+    const extraReb=Math.max(0,p.ts.reb-snapTotal.reb);
+    const extraAst=Math.max(0,p.ts.ast-snapTotal.ast);
+    pts+=extraPts; reb+=extraReb; ast+=extraAst;
   }
 
-  // Subtract trade baseline if this is a traded-in player
+  // Subtract trade baseline
   const base=baseOverride||{pts:0,reb:0,ast:0};
   pts=Math.max(0,pts-base.pts);
   reb=Math.max(0,reb-base.reb);
