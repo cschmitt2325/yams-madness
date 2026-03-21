@@ -1486,7 +1486,10 @@ function renderRoster(cId){
         <div class="roster-team">${t.name} · ${t.seed}-seed${p.eliminated?' · ELIM':''}</div>
       </div>
       <div class="roster-stats">${score.toFixed(1)}<small>${pts}/${reb}/${ast}</small></div>
-      ${isAdmin?`<button class="btn xs sec" onclick="openEditStats('${pid}','${cId}');event.stopPropagation()">✏️</button>`:''}
+      <div style="display:flex;gap:4px;">
+        ${isAdmin?`<button class="btn xs sec" onclick="openEditStats('${pid}','${cId}');event.stopPropagation()">✏️</button>`:''}
+        ${isAdmin&&isTradeIn&&!tradeBaselinesR[pid]?`<button class="btn xs warn" onclick="setTradeBaseline('${cId}','${pid}');event.stopPropagation()" title="Set current stats as trade baseline">📍</button>`:''}
+      </div>
     </div>`;
   }).join('');
 
@@ -1717,6 +1720,17 @@ function selectTradePlayer(type, id, name, team, seed){
   selectedEl.textContent='✓ '+name+' ('+team+', Seed '+seed+')';
   searchEl.value='';
   listEl.style.display='none';
+}
+
+function setTradeBaseline(cId, pickId){
+  const c=S.contestants.find(c=>c.id===cId);
+  const p=S.players.find(pl=>pl.id===pickId);
+  if(!c||!p) return;
+  const tr=c.tradeHistory.find(t=>t.pickId===pickId);
+  if(!tr){ toast('Trade record not found','err'); return; }
+  tr.pickBaseline={pts:p.ts.pts, reb:p.ts.reb, ast:p.ts.ast};
+  save(); renderLB();
+  toast('Baseline set: '+p.name+' '+p.ts.pts+'/'+p.ts.reb+'/'+p.ts.ast,'ok');
 }
 
 function doTrade(){
