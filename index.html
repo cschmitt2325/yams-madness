@@ -2579,18 +2579,16 @@ function startLiveStats(){
 }
 
 function seedGameStats(){
-  // Reset ALL player gameStats and rebuild purely from snapshots + current ts
-  // This fixes any doubling issues from previous seeding attempts
+  // Only run once — if already seeded, skip
+  if(META.gameStatsSeeded) return;
+  
   const snaps=META.roundSnapshots||{};
   const snapRounds=Object.keys(snaps);
-  if(!snapRounds.length) return; // no snapshots yet, nothing to do
+  if(!snapRounds.length) return;
 
-  let changed=0;
+  // Wipe all gameStats and rebuild from snapshots only
   S.players.forEach(p=>{
-    // Start fresh
     p.gameStats={};
-
-    // Add one entry per snapshotted round
     snapRounds.forEach(round=>{
       if(snaps[round][p.id]){
         p.gameStats['snap_'+round]={
@@ -2600,18 +2598,17 @@ function seedGameStats(){
         };
       }
     });
-
-    // Recompute ts as sum of snapshots only (live fetch will add current game on top)
     const entries=Object.values(p.gameStats);
     if(entries.length>0){
       p.ts.pts=entries.reduce((s,g)=>s+g.pts,0);
       p.ts.reb=entries.reduce((s,g)=>s+g.reb,0);
       p.ts.ast=entries.reduce((s,g)=>s+g.ast,0);
-      changed++;
     }
   });
 
-  if(changed>0){ save(); console.log('YAMS: Rebuilt gameStats for '+changed+' players from '+snapRounds.length+' snapshot(s)'); }
+  META.gameStatsSeeded=true;
+  save();
+  console.log('YAMS: gameStats seeded from snapshots, will not run again');
 }
 
 function fixMissingBaselines(){
@@ -2662,6 +2659,7 @@ async function init(){
   document.getElementById('splashYear').textContent=(META.year||new Date().getFullYear())+' SEASON';
   // Show past seasons if any
   startRealtime();
+  META.gameStatsSeeded=false; // force one clean reseed
   seedGameStats();
   startLiveStats();
   fixMissingBaselines();
