@@ -1358,11 +1358,29 @@ function confirmPick(){
 // ════════════════════════════════════════════════
 function calcScore(c){
   if(META.playInActive) return 0;
-  return c.players.reduce((t,pid)=>{
+  const snaps=META.roundSnapshots||{};
+
+  // Current roster players - full live ts
+  let total=c.players.reduce((t,pid)=>{
     const p=S.players.find(pl=>pl.id===pid);
     if(!p) return t;
     return t+(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
   },0);
+
+  // Traded-away players - use their frozen snapshot stats
+  (c.tradeHistory||[]).forEach(tr=>{
+    const p=S.players.find(pl=>pl.id===tr.dropId);
+    if(!p||c.players.includes(tr.dropId)) return; // skip if still on roster
+    const snapRound=tr.round||'R1';
+    if(snaps[snapRound]&&snaps[snapRound][p.id]){
+      const ps=snaps[snapRound][p.id];
+      total+=(ps.pts*S.weights.pts)+(ps.reb*S.weights.reb)+(ps.ast*S.weights.ast);
+    } else {
+      total+=(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
+    }
+  });
+
+  return total;
 }
 
 function renderLB(){
@@ -1413,18 +1431,49 @@ function renderRoster(cId){
   const el=document.getElementById('lbr-'+cId);
   const total=calcScore(c);
   const isAdmin=role==='admin';
+  const snaps=META.roundSnapshots||{};
+
+  // Traded-away rows (frozen stats)
+  const tradedAwayRows=(c.tradeHistory||[]).map(tr=>{
+    const p=S.players.find(pl=>pl.id===tr.dropId);
+    const t=p?S.teams.find(tm=>tm.id===p.teamId):null;
+    if(!p||!t||c.players.includes(tr.dropId)) return '';
+    const snapRound=tr.round||'R1';
+    let sc=0;
+    if(snaps[snapRound]&&snaps[snapRound][p.id]){
+      const ps=snaps[snapRound][p.id];
+      sc=(ps.pts*S.weights.pts)+(ps.reb*S.weights.reb)+(ps.ast*S.weights.ast);
+    } else {
+      sc=(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
+    }
+    const picked=S.players.find(pl=>pl.id===tr.pickId);
+    return `<div class="roster-row out" style="opacity:0.6;border-left:3px solid var(--t3);">
+      <div class="roster-player">
+        <div class="roster-pname" style="text-decoration:line-through;">${p.name}</div>
+        <div class="roster-team">${t.name} · ${t.seed}-seed · <span style="color:var(--t3);">TRADED → ${picked?.name||''}</span></div>
+      </div>
+      <div class="roster-stats">${sc.toFixed(1)}<small>${p.ts.pts}/${p.ts.reb}/${p.ts.ast}</small></div>
+    </div>`;
+  }).join('');
+
+  // Current roster rows
   const rows=c.players.map(pid=>{
     const p=S.players.find(pl=>pl.id===pid); const t=p?S.teams.find(t=>t.id===p.teamId):null;
     if(!p||!t) return '';
     const score=META.playInActive?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
-    return `<div class="roster-row ${p.eliminated?'out':''}">
-      <div class="roster-player"><div class="roster-pname">${p.name}</div><div class="roster-team">${t.name} · ${t.seed}-seed${p.eliminated?' · ELIM':''}</div></div>
+    const isTradeIn=(c.tradeHistory||[]).some(tr=>tr.pickId===pid);
+    return `<div class="roster-row ${p.eliminated?'out':''}" style="${isTradeIn?'border-left:3px solid var(--gold);':''}">
+      <div class="roster-player">
+        <div class="roster-pname">${p.name}${isTradeIn?` <span style="font-size:10px;color:var(--gold);font-weight:700;">IN</span>`:''}</div>
+        <div class="roster-team">${t.name} · ${t.seed}-seed${p.eliminated?' · ELIM':''}</div>
+      </div>
       <div class="roster-stats">${score.toFixed(1)}<small>${p.ts.pts}/${p.ts.reb}/${p.ts.ast}</small></div>
       ${isAdmin?`<button class="btn xs sec" onclick="openEditStats('${pid}','${cId}');event.stopPropagation()">✏️</button>`:''}
     </div>`;
   }).join('');
-  const addBtn=isAdmin&&c.players.length<7?`<button class="btn sm" style="margin-top:10px;width:100%;" onclick="openAddToRoster('${cId}');event.stopPropagation()">＋ Add Player</button>`:''; 
-  el.innerHTML=`<div class="roster-expand">${rows||'<div style="color:var(--t3);font-size:13px;">No players drafted.</div>'}${addBtn}<div style="margin-top:12px;display:flex;justify-content:flex-end;"><span style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;color:var(--gold);">${total.toFixed(1)} pts</span></div></div>`;
+
+  const addBtn=isAdmin&&c.players.length<7?`<button class="btn sm" style="margin-top:10px;width:100%;" onclick="openAddToRoster('${cId}');event.stopPropagation()">＋ Add Player</button>`:'';
+  el.innerHTML=`<div class="roster-expand">${tradedAwayRows}${rows||'<div style="color:var(--t3);font-size:13px;">No players drafted.</div>'}${addBtn}<div style="margin-top:12px;display:flex;justify-content:flex-end;"><span style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;color:var(--gold);">${total.toFixed(1)} pts</span></div></div>`;
 }
 
 // ════════════════════════════════════════════════
