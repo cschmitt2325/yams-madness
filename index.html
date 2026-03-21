@@ -1360,11 +1360,21 @@ function calcScore(c){
   if(META.playInActive) return 0;
   const snaps=META.roundSnapshots||{};
 
-  // Current roster players - full live ts
+  // Build baseline map for traded-in players
+  const tradeBaselines={};
+  (c.tradeHistory||[]).forEach(tr=>{
+    if(tr.pickBaseline) tradeBaselines[tr.pickId]=tr.pickBaseline;
+  });
+
+  // Current roster players - subtract baseline for traded-in players
   let total=c.players.reduce((t,pid)=>{
     const p=S.players.find(pl=>pl.id===pid);
     if(!p) return t;
-    return t+(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
+    const base=tradeBaselines[pid]||{pts:0,reb:0,ast:0};
+    const pts=Math.max(0,p.ts.pts-base.pts);
+    const reb=Math.max(0,p.ts.reb-base.reb);
+    const ast=Math.max(0,p.ts.ast-base.ast);
+    return t+(pts*S.weights.pts)+(reb*S.weights.reb)+(ast*S.weights.ast);
   },0);
 
   // Traded-away players - use their frozen snapshot stats
@@ -1456,18 +1466,26 @@ function renderRoster(cId){
     </div>`;
   }).join('');
 
+  // Build baseline map
+  const tradeBaselinesR={};
+  (c.tradeHistory||[]).forEach(tr=>{ if(tr.pickBaseline) tradeBaselinesR[tr.pickId]=tr.pickBaseline; });
+
   // Current roster rows
   const rows=c.players.map(pid=>{
     const p=S.players.find(pl=>pl.id===pid); const t=p?S.teams.find(t=>t.id===p.teamId):null;
     if(!p||!t) return '';
-    const score=META.playInActive?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
+    const base=tradeBaselinesR[pid]||{pts:0,reb:0,ast:0};
+    const pts=Math.max(0,p.ts.pts-base.pts);
+    const reb=Math.max(0,p.ts.reb-base.reb);
+    const ast=Math.max(0,p.ts.ast-base.ast);
+    const score=META.playInActive?0:(pts*S.weights.pts)+(reb*S.weights.reb)+(ast*S.weights.ast);
     const isTradeIn=(c.tradeHistory||[]).some(tr=>tr.pickId===pid);
     return `<div class="roster-row ${p.eliminated?'out':''}" style="${isTradeIn?'border-left:3px solid var(--gold);':''}">
       <div class="roster-player">
         <div class="roster-pname">${p.name}${isTradeIn?` <span style="font-size:10px;color:var(--gold);font-weight:700;">IN</span>`:''}</div>
         <div class="roster-team">${t.name} · ${t.seed}-seed${p.eliminated?' · ELIM':''}</div>
       </div>
-      <div class="roster-stats">${score.toFixed(1)}<small>${p.ts.pts}/${p.ts.reb}/${p.ts.ast}</small></div>
+      <div class="roster-stats">${score.toFixed(1)}<small>${pts}/${reb}/${ast}</small></div>
       ${isAdmin?`<button class="btn xs sec" onclick="openEditStats('${pid}','${cId}');event.stopPropagation()">✏️</button>`:''}
     </div>`;
   }).join('');
@@ -1719,7 +1737,9 @@ function doTrade(){
   // Use s19 slot first, then s10
   if(c.trades.s19) c.trades.s19=false; else c.trades.s10=false;
   if(!c.tradeHistory) c.tradeHistory=[];
-  c.tradeHistory.push({dropId,pickId,round:currentRoundName(),ts:Date.now()});
+  // Snapshot picked player's current stats as baseline — only count stats earned AFTER trade
+  const pickBaseline={pts:pick.ts.pts, reb:pick.ts.reb, ast:pick.ts.ast};
+  c.tradeHistory.push({dropId,pickId,round:currentRoundName(),ts:Date.now(),pickBaseline});
   save(); closeM('trade'); renderLB(); renderTrades();
   if(myContestantId===cId) renderMyTeam();
   toast(`${drop.name} → ${pick.name}`,'ok');
@@ -2135,11 +2155,19 @@ function renderMyTeam(){
     </div>`;
   }).join('');
 
+  // Build baseline map for My Team
+  const myTradeBaselines={};
+  (c.tradeHistory||[]).forEach(tr=>{ if(tr.pickBaseline) myTradeBaselines[tr.pickId]=tr.pickBaseline; });
+
   // Current roster players
   const rosterHtml=c.players.map(pid=>{
     const p=S.players.find(pl=>pl.id===pid); const t=p?S.teams.find(t=>t.id===p.teamId):null;
     if(!p||!t) return '';
-    const sc=META.playInActive?0:(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
+    const base=myTradeBaselines[pid]||{pts:0,reb:0,ast:0};
+    const pts=Math.max(0,p.ts.pts-base.pts);
+    const reb=Math.max(0,p.ts.reb-base.reb);
+    const ast=Math.max(0,p.ts.ast-base.ast);
+    const sc=META.playInActive?0:(pts*S.weights.pts)+(reb*S.weights.reb)+(ast*S.weights.ast);
     const isTradeIn=tradedInIds.has(pid);
     return `<div class="mt-player-row ${p.eliminated?'elim':''}" style="${isTradeIn?'border-left:3px solid var(--gold);':''}">
       <div style="flex:1;">
@@ -2147,7 +2175,7 @@ function renderMyTeam(){
         <div class="mt-pteam">${t.name} · Seed ${t.seed}${p.eliminated?' · <span style="color:var(--red)">ELIMINATED</span>':''}</div>
       </div>
       <div style="text-align:right;">
-        <div class="mt-pscore">${sc.toFixed(1)}<small>${p.ts.pts}/${p.ts.reb}/${p.ts.ast}</small></div>
+        <div class="mt-pscore">${sc.toFixed(1)}<small>${isTradeIn?pts+'/'+reb+'/'+ast:p.ts.pts+'/'+p.ts.reb+'/'+p.ts.ast}</small></div>
       </div>
     </div>`;
   }).join('');
