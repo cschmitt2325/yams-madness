@@ -2533,6 +2533,39 @@ function startLiveStats(){
   _liveStatsInterval = setInterval(fetchLiveStats, 3 * 60 * 1000); // every 3 min
 }
 
+function fixMissingBaselines(){
+  if(!META.tradeBaselines) META.tradeBaselines={};
+  const snaps=META.roundSnapshots||{};
+  let fixed=0;
+  S.contestants.forEach(c=>{
+    (c.tradeHistory||[]).forEach(tr=>{
+      if(!META.tradeBaselines[tr.pickId]){
+        const p=S.players.find(pl=>pl.id===tr.pickId);
+        if(!p) return;
+        // Try to use the snapshot from the round the trade was made in
+        // This gives us the player's stats at end of that round = correct baseline
+        const tradeRound=tr.round||'R1';
+        const snapRounds=Object.keys(snaps);
+        // Find the snapshot for the round before the trade round, or the trade round itself
+        const roundIdx=ROUNDS.indexOf(tradeRound);
+        let baseline={pts:0,reb:0,ast:0};
+        // Walk back through rounds to find the most recent snapshot before/at trade time
+        for(let i=roundIdx;i>=0;i--){
+          const r=ROUNDS[i];
+          if(snaps[r]&&snaps[r][p.id]){
+            baseline={pts:snaps[r][p.id].pts, reb:snaps[r][p.id].reb, ast:snaps[r][p.id].ast};
+            break;
+          }
+        }
+        META.tradeBaselines[tr.pickId]=baseline;
+        fixed++;
+        console.log('YAMS: Fixed baseline for '+p.name+': '+baseline.pts+'/'+baseline.reb+'/'+baseline.ast);
+      }
+    });
+  });
+  if(fixed>0){ save(); console.log('YAMS: Fixed '+fixed+' missing baselines'); }
+}
+
 async function init(){
   document.getElementById('splashYear').textContent=new Date().getFullYear()+' SEASON';
   // Show loading state on login button while we pull remote state
@@ -2546,6 +2579,7 @@ async function init(){
   // Show past seasons if any
   startRealtime();
   startLiveStats();
+  fixMissingBaselines();
   renderSplashPastSeasons();
 }
 
