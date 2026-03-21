@@ -2578,6 +2578,31 @@ function startLiveStats(){
   _liveStatsInterval = setInterval(fetchLiveStats, 3 * 60 * 1000); // every 3 min
 }
 
+function seedGameStats(){
+  // Seed gameStats from round snapshots (most reliable source of historical stats)
+  // This ensures R1 stats aren't lost when R2 fetch runs
+  const snaps=META.roundSnapshots||{};
+  let seeded=0;
+  S.players.forEach(p=>{
+    if(!p.gameStats) p.gameStats={};
+    // For each round snapshot, add an entry if not already present
+    Object.entries(snaps).forEach(([round, snap])=>{
+      const key='snap_'+round;
+      if(snap[p.id]&&!p.gameStats[key]){
+        p.gameStats[key]={pts:snap[p.id].pts, reb:snap[p.id].reb, ast:snap[p.id].ast};
+        seeded++;
+      }
+    });
+    // Recompute ts from all game entries
+    if(Object.keys(p.gameStats).length>0){
+      p.ts.pts=Object.values(p.gameStats).reduce((s,g)=>s+g.pts,0);
+      p.ts.reb=Object.values(p.gameStats).reduce((s,g)=>s+g.reb,0);
+      p.ts.ast=Object.values(p.gameStats).reduce((s,g)=>s+g.ast,0);
+    }
+  });
+  if(seeded>0){ save(); console.log('YAMS: Seeded gameStats from snapshots for '+seeded+' player-rounds'); }
+}
+
 function fixMissingBaselines(){
   if(!META.tradeBaselines) META.tradeBaselines={};
   const snaps=META.roundSnapshots||{};
@@ -2626,6 +2651,7 @@ async function init(){
   document.getElementById('splashYear').textContent=(META.year||new Date().getFullYear())+' SEASON';
   // Show past seasons if any
   startRealtime();
+  seedGameStats();
   startLiveStats();
   fixMissingBaselines();
   renderSplashPastSeasons();
