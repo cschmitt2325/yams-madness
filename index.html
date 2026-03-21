@@ -1360,17 +1360,13 @@ function calcScore(c){
   if(META.playInActive) return 0;
   const snaps=META.roundSnapshots||{};
 
-  // Build baseline map for traded-in players
-  const tradeBaselines={};
-  (c.tradeHistory||[]).forEach(tr=>{
-    if(tr.pickBaseline) tradeBaselines[tr.pickId]=tr.pickBaseline;
-  });
+  const metaBaselines=META.tradeBaselines||{};
 
   // Current roster players - subtract baseline for traded-in players
   let total=c.players.reduce((t,pid)=>{
     const p=S.players.find(pl=>pl.id===pid);
     if(!p) return t;
-    const base=tradeBaselines[pid]||{pts:0,reb:0,ast:0};
+    const base=metaBaselines[pid]||{pts:0,reb:0,ast:0};
     const pts=Math.max(0,p.ts.pts-base.pts);
     const reb=Math.max(0,p.ts.reb-base.reb);
     const ast=Math.max(0,p.ts.ast-base.ast);
@@ -1466,15 +1462,11 @@ function renderRoster(cId){
     </div>`;
   }).join('');
 
-  // Build baseline map
-  const tradeBaselinesR={};
-  (c.tradeHistory||[]).forEach(tr=>{ if(tr.pickBaseline) tradeBaselinesR[tr.pickId]=tr.pickBaseline; });
-
   // Current roster rows
   const rows=c.players.map(pid=>{
     const p=S.players.find(pl=>pl.id===pid); const t=p?S.teams.find(t=>t.id===p.teamId):null;
     if(!p||!t) return '';
-    const base=tradeBaselinesR[pid]||{pts:0,reb:0,ast:0};
+    const base=(META.tradeBaselines||{})[pid]||{pts:0,reb:0,ast:0};
     const pts=Math.max(0,p.ts.pts-base.pts);
     const reb=Math.max(0,p.ts.reb-base.reb);
     const ast=Math.max(0,p.ts.ast-base.ast);
@@ -1488,7 +1480,7 @@ function renderRoster(cId){
       <div class="roster-stats">${score.toFixed(1)}<small>${pts}/${reb}/${ast}</small></div>
       <div style="display:flex;gap:4px;">
         ${isAdmin?`<button class="btn xs sec" onclick="openEditStats('${pid}','${cId}');event.stopPropagation()">✏️</button>`:''}
-        ${isAdmin&&isTradeIn&&!tradeBaselinesR[pid]?`<button class="btn xs warn" onclick="setTradeBaseline('${cId}','${pid}');event.stopPropagation()" title="Set current stats as trade baseline">📍</button>`:''}
+        ${isAdmin&&isTradeIn&&!(META.tradeBaselines||{})[pid]?`<button class="btn xs warn" onclick="setTradeBaseline('${cId}','${pid}');event.stopPropagation()" title="Set current stats as trade baseline">📍</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -1723,12 +1715,10 @@ function selectTradePlayer(type, id, name, team, seed){
 }
 
 function setTradeBaseline(cId, pickId){
-  const c=S.contestants.find(c=>c.id===cId);
   const p=S.players.find(pl=>pl.id===pickId);
-  if(!c||!p) return;
-  const tr=c.tradeHistory.find(t=>t.pickId===pickId);
-  if(!tr){ toast('Trade record not found','err'); return; }
-  tr.pickBaseline={pts:p.ts.pts, reb:p.ts.reb, ast:p.ts.ast};
+  if(!p) return;
+  if(!META.tradeBaselines) META.tradeBaselines={};
+  META.tradeBaselines[pickId]={pts:p.ts.pts, reb:p.ts.reb, ast:p.ts.ast};
   save(); renderLB();
   toast('Baseline set: '+p.name+' '+p.ts.pts+'/'+p.ts.reb+'/'+p.ts.ast,'ok');
 }
@@ -1752,8 +1742,9 @@ function doTrade(){
   if(c.trades.s19) c.trades.s19=false; else c.trades.s10=false;
   if(!c.tradeHistory) c.tradeHistory=[];
   // Snapshot picked player's current stats as baseline — only count stats earned AFTER trade
-  const pickBaseline={pts:pick.ts.pts, reb:pick.ts.reb, ast:pick.ts.ast};
-  c.tradeHistory.push({dropId,pickId,round:currentRoundName(),ts:Date.now(),pickBaseline});
+  if(!META.tradeBaselines) META.tradeBaselines={};
+  META.tradeBaselines[pickId]={pts:pick.ts.pts, reb:pick.ts.reb, ast:pick.ts.ast};
+  c.tradeHistory.push({dropId,pickId,round:currentRoundName(),ts:Date.now()});
   save(); closeM('trade'); renderLB(); renderTrades();
   if(myContestantId===cId) renderMyTeam();
   toast(`${drop.name} → ${pick.name}`,'ok');
@@ -2169,15 +2160,11 @@ function renderMyTeam(){
     </div>`;
   }).join('');
 
-  // Build baseline map for My Team
-  const myTradeBaselines={};
-  (c.tradeHistory||[]).forEach(tr=>{ if(tr.pickBaseline) myTradeBaselines[tr.pickId]=tr.pickBaseline; });
-
   // Current roster players
   const rosterHtml=c.players.map(pid=>{
     const p=S.players.find(pl=>pl.id===pid); const t=p?S.teams.find(t=>t.id===p.teamId):null;
     if(!p||!t) return '';
-    const base=myTradeBaselines[pid]||{pts:0,reb:0,ast:0};
+    const base=(META.tradeBaselines||{})[pid]||{pts:0,reb:0,ast:0};
     const pts=Math.max(0,p.ts.pts-base.pts);
     const reb=Math.max(0,p.ts.reb-base.reb);
     const ast=Math.max(0,p.ts.ast-base.ast);
@@ -2489,6 +2476,17 @@ async function fetchLiveStats(){
           }
 
           if(p.ts.pts!==pts||p.ts.reb!==reb||p.ts.ast!==ast){
+            // If this player was traded in and has no baseline yet, set it NOW
+            // before overwriting ts — this captures their pre-trade stats
+            // Auto-set baseline for traded-in players with no baseline yet
+            if(!META.tradeBaselines) META.tradeBaselines={};
+            S.contestants.forEach(c=>{
+              const tr=(c.tradeHistory||[]).find(t=>t.pickId===p.id);
+              if(tr&&!META.tradeBaselines[p.id]){
+                META.tradeBaselines[p.id]={pts:p.ts.pts, reb:p.ts.reb, ast:p.ts.ast};
+                console.log(`YAMS: Auto-baseline ${p.name}: ${p.ts.pts}/${p.ts.reb}/${p.ts.ast}`);
+              }
+            });
             console.log(`YAMS: Updated ${p.name}: ${pts}/${reb}/${ast}`);
             p.ts.pts=pts; p.ts.reb=reb; p.ts.ast=ast;
             anyChange=true;
