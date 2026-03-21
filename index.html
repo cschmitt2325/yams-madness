@@ -2579,28 +2579,39 @@ function startLiveStats(){
 }
 
 function seedGameStats(){
-  // Seed gameStats from round snapshots (most reliable source of historical stats)
-  // This ensures R1 stats aren't lost when R2 fetch runs
+  // Reset ALL player gameStats and rebuild purely from snapshots + current ts
+  // This fixes any doubling issues from previous seeding attempts
   const snaps=META.roundSnapshots||{};
-  let seeded=0;
+  const snapRounds=Object.keys(snaps);
+  if(!snapRounds.length) return; // no snapshots yet, nothing to do
+
+  let changed=0;
   S.players.forEach(p=>{
-    if(!p.gameStats) p.gameStats={};
-    // For each round snapshot, add an entry if not already present
-    Object.entries(snaps).forEach(([round, snap])=>{
-      const key='snap_'+round;
-      if(snap[p.id]&&!p.gameStats[key]){
-        p.gameStats[key]={pts:snap[p.id].pts, reb:snap[p.id].reb, ast:snap[p.id].ast};
-        seeded++;
+    // Start fresh
+    p.gameStats={};
+
+    // Add one entry per snapshotted round
+    snapRounds.forEach(round=>{
+      if(snaps[round][p.id]){
+        p.gameStats['snap_'+round]={
+          pts:snaps[round][p.id].pts,
+          reb:snaps[round][p.id].reb,
+          ast:snaps[round][p.id].ast
+        };
       }
     });
-    // Recompute ts from all game entries
-    if(Object.keys(p.gameStats).length>0){
-      p.ts.pts=Object.values(p.gameStats).reduce((s,g)=>s+g.pts,0);
-      p.ts.reb=Object.values(p.gameStats).reduce((s,g)=>s+g.reb,0);
-      p.ts.ast=Object.values(p.gameStats).reduce((s,g)=>s+g.ast,0);
+
+    // Recompute ts as sum of snapshots only (live fetch will add current game on top)
+    const entries=Object.values(p.gameStats);
+    if(entries.length>0){
+      p.ts.pts=entries.reduce((s,g)=>s+g.pts,0);
+      p.ts.reb=entries.reduce((s,g)=>s+g.reb,0);
+      p.ts.ast=entries.reduce((s,g)=>s+g.ast,0);
+      changed++;
     }
   });
-  if(seeded>0){ save(); console.log('YAMS: Seeded gameStats from snapshots for '+seeded+' player-rounds'); }
+
+  if(changed>0){ save(); console.log('YAMS: Rebuilt gameStats for '+changed+' players from '+snapRounds.length+' snapshot(s)'); }
 }
 
 function fixMissingBaselines(){
