@@ -126,6 +126,12 @@ select.input{cursor:pointer;}
 .roster-team{font-size:11px;color:var(--t2);}
 .roster-stats{font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700;color:var(--gold);flex-shrink:0;}
 .roster-stats small{font-size:10px;color:var(--t3);font-family:'Barlow',sans-serif;}
+.round-cells{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;}
+.round-cell{display:flex;flex-direction:column;align-items:center;background:rgba(255,255,255,0.06);border-radius:6px;padding:2px 6px;min-width:28px;}
+.round-cell.live{background:rgba(245,166,35,0.18);border:1px solid rgba(245,166,35,0.4);}
+.round-lbl{font-size:9px;color:var(--t3);font-weight:600;}
+.round-val{font-size:12px;font-weight:700;color:var(--t1);}
+.round-cell.live .round-val{color:var(--gold);}
 .roster-row.out .roster-pname{text-decoration:line-through;color:var(--t3);}
 .roster-row.out .roster-stats{color:var(--t3);}
 
@@ -1344,40 +1350,31 @@ function confirmPick(){
 // ════════════════════════════════════════════════
 // LEADERBOARD
 // ════════════════════════════════════════════════
+function roundScore(p, round){
+  // Score for a specific snapshotted round
+  const snap=(META.roundSnapshots||{})[round];
+  if(!snap||!snap[p.id]) return 0;
+  return (snap[p.id].pts*S.weights.pts)+(snap[p.id].reb*S.weights.reb)+(snap[p.id].ast*S.weights.ast);
+}
+
+function liveScore(p){
+  // Current in-progress game score — only if team is actively playing this round
+  const activeTeams=META.currentRoundGameTeams||{};
+  if(!activeTeams[p.teamId]) return 0;
+  return (p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
+}
+
 function playerScore(p, baseOverride){
-  // Score = all snapshotted rounds + current round ts
-  // Key insight: ts from ESPN is CUMULATIVE for the current game
-  // Snapshot stores end-of-round stats
-  // So for current round: player score = ts (which is their running total this game)
-  // For past rounds: use snapshots
-  // To avoid double counting: only add ts if it exceeds snapshot total
+  // Total = sum of all snapshotted rounds + current live game
   const snaps=META.roundSnapshots||{};
-  const currentRound=currentRoundName();
-  let snapPts=0, snapReb=0, snapAst=0;
-
-  // Sum all snapshotted rounds
-  Object.entries(snaps).forEach(([round, snap])=>{
-    if(snap[p.id]){ snapPts+=snap[p.id].pts; snapReb+=snap[p.id].reb; snapAst+=snap[p.id].ast; }
-  });
-
-  let pts=snapPts, reb=snapReb, ast=snapAst;
-
-  // Add current round: only the portion of ts ABOVE what snapshots already captured
-  // This handles: players who haven't played yet (ts=0, adds 0)
-  // Players whose R1 game ran past midnight (ts=R1 stats = same as snapshot, adds 0)
-  // Players actively playing R2 (ts=R2 stats > snapshot, adds the difference)
-  if(!snaps[currentRound]){
-    pts+=Math.max(0, p.ts.pts - snapPts);
-    reb+=Math.max(0, p.ts.reb - snapReb);
-    ast+=Math.max(0, p.ts.ast - snapAst);
-  }
-
+  let pts=0,reb=0,ast=0;
+  Object.values(snaps).forEach(s=>{ if(s[p.id]){pts+=s[p.id].pts;reb+=s[p.id].reb;ast+=s[p.id].ast;} });
+  // Add live ts only if team has a current-round game
+  const activeTeams=META.currentRoundGameTeams||{};
+  if(activeTeams[p.teamId]){ pts+=p.ts.pts; reb+=p.ts.reb; ast+=p.ts.ast; }
   // Subtract trade baseline
   const base=baseOverride||{pts:0,reb:0,ast:0};
-  pts=Math.max(0,pts-base.pts);
-  reb=Math.max(0,reb-base.reb);
-  ast=Math.max(0,ast-base.ast);
-
+  pts=Math.max(0,pts-base.pts); reb=Math.max(0,reb-base.reb); ast=Math.max(0,ast-base.ast);
   return (pts*S.weights.pts)+(reb*S.weights.reb)+(ast*S.weights.ast);
 }
 
@@ -1486,13 +1483,27 @@ function renderRoster(cId){
     if(!p||!t) return '';
     const isTradeIn=(c.tradeHistory||[]).some(tr=>tr.pickId===pid);
     const base=isTradeIn?(META.tradeBaselines||{})[pid]||{pts:0,reb:0,ast:0}:{pts:0,reb:0,ast:0};
-    const score=META.playInActive?0:playerScore(p,base);
+    const totalScore=META.playInActive?0:playerScore(p,base);
+    const snaps=META.roundSnapshots||{};
+    const activeTeams=META.currentRoundGameTeams||{};
+    // Build per-round score cells
+    const roundCells=ROUNDS.map(r=>{
+      if(snaps[r]&&snaps[r][p.id]){
+        const rs=(snaps[r][p.id].pts*S.weights.pts)+(snaps[r][p.id].reb*S.weights.reb)+(snaps[r][p.id].ast*S.weights.ast);
+        return `<div class="round-cell snapped"><span class="round-lbl">${ROUND_LABELS[r]}</span><span class="round-val">${rs.toFixed(0)}</span></div>`;
+      } else if(!snaps[r]&&r===currentRoundName()&&activeTeams[p.teamId]){
+        const ls=(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
+        return `<div class="round-cell live"><span class="round-lbl">${ROUND_LABELS[r]}</span><span class="round-val">${ls.toFixed(0)}</span></div>`;
+      }
+      return '';
+    }).filter(Boolean).join('');
     return `<div class="roster-row ${p.eliminated?'out':''}" style="${isTradeIn?'border-left:3px solid var(--gold);':''}">
       <div class="roster-player">
         <div class="roster-pname">${p.name}${isTradeIn?` <span style="font-size:10px;color:var(--gold);font-weight:700;">IN</span>`:''}</div>
         <div class="roster-team">${t.name} · ${t.seed}-seed${p.eliminated?' · ELIM':''}</div>
+        <div class="round-cells">${roundCells}</div>
       </div>
-      <div class="roster-stats">${score.toFixed(1)}<small>${p.ts.pts}/${p.ts.reb}/${p.ts.ast}</small></div>
+      <div class="roster-stats">${totalScore.toFixed(1)}<small>${p.ts.pts}/${p.ts.reb}/${p.ts.ast}</small></div>
       <div style="display:flex;gap:4px;">
         ${isAdmin?`<button class="btn xs sec" onclick="openEditStats('${pid}','${cId}');event.stopPropagation()">✏️</button>`:''}
         ${isAdmin&&isTradeIn&&!(META.tradeBaselines||{})[pid]?`<button class="btn xs warn" onclick="setTradeBaseline('${cId}','${pid}');event.stopPropagation()" title="Set current stats as trade baseline">📍</button>`:''}
@@ -2122,7 +2133,8 @@ function loadMyTheme(){
 // ════════════════════════════════════════════════
 // MY TEAM
 // ════════════════════════════════════════════════
-const ROUNDS = ['R1','R2','Sweet 16','Elite 8','Final 4','Final','Champion'];
+const ROUNDS = ['R64','R32','S16','E8','F4','F2','Champ'];
+const ROUND_LABELS = {'R64':'64','R32':'32','S16':'16','E8':'8','F4':'4','F2':'2','Champ':'🏆'};
 const ROUND_GAMES = {R1:32,R2:16,'Sweet 16':8,'Elite 8':4,'Final 4':2,'Final':1,'Champion':1};
 
 function currentRoundName(){
@@ -2471,6 +2483,7 @@ async function fetchLiveStats(){
     console.log(`YAMS: Found ${events.length} games`);
 
     let anyChange = false;
+    META.currentRoundGameTeams={}; // reset each fetch
 
     for(const event of events){
       const status = event.status?.type?.name;
@@ -2479,6 +2492,13 @@ async function fetchLiveStats(){
       const gameId = event.id;
       const teams = event.competitions?.[0]?.competitors?.map(c=>c.team?.displayName)||[];
       console.log(`YAMS: Game ${gameId}: ${teams.join(' vs ')} [${status}]`);
+      // Track which teams have current-round games so playerScore knows ts is valid
+      if(!META.currentRoundGameTeams) META.currentRoundGameTeams={};
+      event.competitions?.[0]?.competitors?.forEach(comp=>{
+        const tName=comp.team?.displayName||'';
+        const yamsTeam=S.teams.find(t=>normalizeName(t.name)===normalizeName(tName));
+        if(yamsTeam) META.currentRoundGameTeams[yamsTeam.id]=true;
+      });
 
       let boxData;
       try {
@@ -2526,20 +2546,9 @@ async function fetchLiveStats(){
             continue;
           }
 
-          // ts = sum(all snapshots) + current_game
-          // playerScore delta = ts - snapshots = current_game only
-          // Works for ALL rounds automatically
-          if(p.eliminated){ continue; } // skip eliminated players
-          const snapsAll=META.roundSnapshots||{};
-          let snapSumPts=0,snapSumReb=0,snapSumAst=0;
-          Object.values(snapsAll).forEach(s=>{
-            if(s[p.id]){ snapSumPts+=s[p.id].pts; snapSumReb+=s[p.id].reb; snapSumAst+=s[p.id].ast; }
-          });
-          const newPts=snapSumPts+pts;
-          const newReb=snapSumReb+reb;
-          const newAst=snapSumAst+ast;
-          if(p.ts.pts!==newPts||p.ts.reb!==newReb||p.ts.ast!==newAst){
-            // Auto-set baseline for traded-in players before first update
+          // Store raw ESPN game stats in ts (current game only, not cumulative)
+          if(p.eliminated){ continue; }
+          if(p.ts.pts!==pts||p.ts.reb!==reb||p.ts.ast!==ast){
             if(!META.tradeBaselines) META.tradeBaselines={};
             S.contestants.forEach(c=>{
               const tr=(c.tradeHistory||[]).find(t=>t.pickId===p.id);
@@ -2547,8 +2556,8 @@ async function fetchLiveStats(){
                 META.tradeBaselines[p.id]={pts:p.ts.pts,reb:p.ts.reb,ast:p.ts.ast};
               }
             });
-            console.log(`YAMS: Updated ${p.name}: snapSum=${snapSumPts}/${snapSumReb}/${snapSumAst} + game=${pts}/${reb}/${ast} = ${newPts}/${newReb}/${newAst}`);
-            p.ts.pts=newPts; p.ts.reb=newReb; p.ts.ast=newAst;
+            console.log(`YAMS: Updated ${p.name}: ${pts}/${reb}/${ast}`);
+            p.ts.pts=pts; p.ts.reb=reb; p.ts.ast=ast;
             anyChange=true;
           }
         }
