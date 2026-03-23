@@ -2500,8 +2500,17 @@ async function fetchLiveStats(){
       // Track which teams have current-round games so playerScore knows ts is valid
       if(!META.currentRoundGameTeams) META.currentRoundGameTeams={};
       event.competitions?.[0]?.competitors?.forEach(comp=>{
-        const tName=comp.team?.displayName||'';
-        const yamsTeam=S.teams.find(t=>normalizeName(t.name)===normalizeName(tName));
+        const tName=normalizeName(comp.team?.displayName||'');
+        // Match ESPN full name (e.g. "Michigan State Spartans") to YAMS short name (e.g. "Michigan State")
+        // Use best match = team whose normalized name has most chars matching, avoiding Michigan/Michigan State confusion
+        let bestTeam=null, bestLen=0;
+        S.teams.forEach(t=>{
+          const yt=normalizeName(t.name);
+          if(tName===yt || tName.includes(yt) || yt.includes(tName)){
+            if(yt.length>bestLen){ bestLen=yt.length; bestTeam=t; }
+          }
+        });
+        const yamsTeam=bestTeam;
         if(yamsTeam) META.currentRoundGameTeams[yamsTeam.id]=true;
       });
 
