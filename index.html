@@ -806,12 +806,8 @@ async function dbSet(key,val){
 }
 
 async function pushState(){
-  // Don't persist currentRoundGameTeams - rebuilt locally by fetchLiveStats
-  const tempTeams=META.currentRoundGameTeams;
-  delete META.currentRoundGameTeams;
   const json=JSON.stringify({S,META});
-  META.currentRoundGameTeams=tempTeams||{};
-  if(json===_lastPushed){ META.currentRoundGameTeams=tempTeams||{}; return; } // no local changes, skip
+  if(json===_lastPushed) return; // no local changes, skip
   _lastPushed=json; // set immediately to prevent double-push
   const v=Date.now();
   const payload={S,META,v};
@@ -2488,21 +2484,15 @@ async function fetchLiveStats(){
     console.log(`YAMS: Found ${events.length} games`);
 
     let anyChange = false;
-    META.currentRoundGameTeams={}; // reset each fetch
 
-    for(const event of events){
+    // FIRST PASS: mark ALL teams from scoreboard as active for this round
+    // Do this before box score fetches so teams are active even if box score fails
+    META.currentRoundGameTeams={};
+    events.forEach(event=>{
       const status = event.status?.type?.name;
-      if(status !== 'STATUS_IN_PROGRESS' && status !== 'STATUS_FINAL') continue;
-
-      const gameId = event.id;
-      const teams = event.competitions?.[0]?.competitors?.map(c=>c.team?.displayName)||[];
-      console.log(`YAMS: Game ${gameId}: ${teams.join(' vs ')} [${status}]`);
-      // Track which teams have current-round games so playerScore knows ts is valid
-      if(!META.currentRoundGameTeams) META.currentRoundGameTeams={};
+      if(status !== 'STATUS_IN_PROGRESS' && status !== 'STATUS_FINAL' && status !== 'STATUS_HALFTIME') return;
       event.competitions?.[0]?.competitors?.forEach(comp=>{
         const tName=normalizeName(comp.team?.displayName||'');
-        // Match ESPN full name (e.g. "Michigan State Spartans") to YAMS short name (e.g. "Michigan State")
-        // Use best match = team whose normalized name has most chars matching, avoiding Michigan/Michigan State confusion
         let bestTeam=null, bestLen=0;
         S.teams.forEach(t=>{
           const yt=normalizeName(t.name);
@@ -2510,10 +2500,20 @@ async function fetchLiveStats(){
             if(yt.length>bestLen){ bestLen=yt.length; bestTeam=t; }
           }
         });
-        const yamsTeam=bestTeam;
-        if(yamsTeam) META.currentRoundGameTeams[yamsTeam.id]=true;
+        if(bestTeam) META.currentRoundGameTeams[bestTeam.id]=true;
       });
+    });
+    const activeTeamCount = Object.keys(META.currentRoundGameTeams).length;
+    console.log(`YAMS: Marked ${activeTeamCount} teams active for this round`);
 
+    // SECOND PASS: fetch box scores for stats
+    for(const event of events){
+      const status = event.status?.type?.name;
+      if(status !== 'STATUS_IN_PROGRESS' && status !== 'STATUS_FINAL') continue;
+
+      const gameId = event.id;
+      const teams = event.competitions?.[0]?.competitors?.map(c=>c.team?.displayName)||[];
+      console.log(`YAMS: Game ${gameId}: ${teams.join(' vs ')} [${status}]`);
       let boxData;
       try {
         const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/summary?event=${gameId}`);
@@ -2561,7 +2561,7 @@ async function fetchLiveStats(){
           }
 
           // Store raw ESPN game stats in ts (current game only, not cumulative)
-          if(p.eliminated){ continue; }
+          // Note: DO NOT skip eliminated players — they still earn points in the round they lost
           if(p.ts.pts!==pts||p.ts.reb!==reb||p.ts.ast!==ast){
             if(!META.tradeBaselines) META.tradeBaselines={};
             S.contestants.forEach(c=>{
