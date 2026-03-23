@@ -1411,6 +1411,11 @@ function calcScore(c){
         dropPts+=snaps[r][p.id].pts; dropReb+=snaps[r][p.id].reb; dropAst+=snaps[r][p.id].ast;
       }
     });
+    // If the trade round hasn't been snapshotted yet, also include the player's current ts
+    // (their stats from the trade round are in ts since snapshot hasn't been taken)
+    if(!snaps[tradeRound]){
+      dropPts+=p.ts.pts; dropReb+=p.ts.reb; dropAst+=p.ts.ast;
+    }
     total+=(dropPts*S.weights.pts)+(dropReb*S.weights.reb)+(dropAst*S.weights.ast);
   });
 
@@ -1468,25 +1473,38 @@ function renderRoster(cId){
   const snaps=META.roundSnapshots||{};
 
   // Traded-away rows (frozen stats)
+  const roundKeyMap={'R1':'R64','R2':'R32','Sweet 16':'S16','Elite 8':'E8','Final 4':'F4','Final':'F2','Champion':'Champ'};
   const tradedAwayRows=(c.tradeHistory||[]).map(tr=>{
     const p=S.players.find(pl=>pl.id===tr.dropId);
     const t=p?S.teams.find(tm=>tm.id===p.teamId):null;
     if(!p||!t||c.players.includes(tr.dropId)) return '';
-    const snapRound=tr.round||'R1';
-    let sc=0;
-    if(snaps[snapRound]&&snaps[snapRound][p.id]){
-      const ps=snaps[snapRound][p.id];
-      sc=(ps.pts*S.weights.pts)+(ps.reb*S.weights.reb)+(ps.ast*S.weights.ast);
-    } else {
-      sc=(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
-    }
+    const rawRound=tr.round||'R64';
+    const tradeRound=roundKeyMap[rawRound]||rawRound;
+    const tradeIdx=ROUNDS.indexOf(tradeRound);
+    // Build per-round score cells for all rounds up to and including trade round
+    let totalSc=0;
+    const roundCells=ROUNDS.map((r,i)=>{
+      if(i>tradeIdx) return ''; // rounds after trade don't count
+      if(snaps[r]&&snaps[r][p.id]){
+        const rs=(snaps[r][p.id].pts*S.weights.pts)+(snaps[r][p.id].reb*S.weights.reb)+(snaps[r][p.id].ast*S.weights.ast);
+        totalSc+=rs;
+        return `<div class="round-cell snapped"><span class="round-lbl">${ROUND_LABELS[r]}</span><span class="round-val">${rs.toFixed(0)}</span></div>`;
+      } else if(i===tradeIdx&&!snaps[r]&&(p.ts.pts>0||p.ts.reb>0||p.ts.ast>0)){
+        // Trade round not yet snapshotted — show ts
+        const rs=(p.ts.pts*S.weights.pts)+(p.ts.reb*S.weights.reb)+(p.ts.ast*S.weights.ast);
+        totalSc+=rs;
+        return `<div class="round-cell snapped"><span class="round-lbl">${ROUND_LABELS[r]}</span><span class="round-val">${rs.toFixed(0)}</span></div>`;
+      }
+      return '';
+    }).filter(Boolean).join('');
     const picked=S.players.find(pl=>pl.id===tr.pickId);
     return `<div class="roster-row out" style="opacity:0.6;border-left:3px solid var(--t3);">
       <div class="roster-player">
         <div class="roster-pname" style="text-decoration:line-through;">${p.name}</div>
         <div class="roster-team">${t.name} · ${t.seed}-seed · <span style="color:var(--t3);">TRADED → ${picked?.name||''}</span></div>
+        <div class="round-cells">${roundCells}</div>
       </div>
-      <div class="roster-stats">${sc.toFixed(1)}<small>${p.ts.pts}/${p.ts.reb}/${p.ts.ast}</small></div>
+      <div class="roster-stats">${totalSc.toFixed(1)}<small>${p.ts.pts}/${p.ts.reb}/${p.ts.ast}</small></div>
     </div>`;
   }).join('');
 
@@ -2579,7 +2597,6 @@ async function fetchLiveStats(){
           }
 
           // Store raw ESPN game stats in ts (current game only, not cumulative)
-          // Note: DO NOT skip eliminated players — they still earn points in the round they lost
           if(p.ts.pts!==pts||p.ts.reb!==reb||p.ts.ast!==ast){
             if(!META.tradeBaselines) META.tradeBaselines={};
             S.contestants.forEach(c=>{
