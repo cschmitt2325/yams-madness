@@ -2487,7 +2487,8 @@ async function fetchLiveStats(){
 
     // FIRST PASS: mark ALL teams from scoreboard as active for this round
     // Do this before box score fetches so teams are active even if box score fails
-    META.currentRoundGameTeams={};
+    // Note: we ADD to currentRoundGameTeams, never reset it — once a team plays this round they stay active
+    if(!META.currentRoundGameTeams) META.currentRoundGameTeams={};
     events.forEach(event=>{
       const status = event.status?.type?.name;
       if(status !== 'STATUS_IN_PROGRESS' && status !== 'STATUS_FINAL' && status !== 'STATUS_HALFTIME') return;
@@ -2505,6 +2506,8 @@ async function fetchLiveStats(){
     });
     const activeTeamCount = Object.keys(META.currentRoundGameTeams).length;
     console.log(`YAMS: Marked ${activeTeamCount} teams active for this round`);
+    // Always save team activity to Supabase immediately so all devices get it
+    _lastPushed=null; save();
 
     // SECOND PASS: fetch box scores for stats
     for(const event of events){
@@ -2600,9 +2603,10 @@ async function fetchLiveStats(){
 
     if(anyChange){
       _lastStatsUpdate=Date.now();
-      save(); rerenderAll();
+      _lastPushed=null; save(); rerenderAll();
       toast('📊 Live stats updated','ok');
     } else {
+      rerenderAll(); // always rerender so active teams show immediately
       console.log('YAMS: No stat changes');
     }
   } catch(e){
