@@ -2673,7 +2673,7 @@ function fixTradeBaselines(){
       // (the picked player's stats before they joined this team)
       let bPts=0,bReb=0,bAst=0;
       ROUNDS.forEach((r,i)=>{
-        if(i<=tradeIdx&&snaps[r]&&snaps[r][pick.id]){
+        if(i<tradeIdx&&snaps[r]&&snaps[r][pick.id]){
           bPts+=snaps[r][pick.id].pts;
           bReb+=snaps[r][pick.id].reb;
           bAst+=snaps[r][pick.id].ast;
